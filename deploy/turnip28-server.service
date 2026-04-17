@@ -1,0 +1,16 @@
+[Unit]
+Description=Turnip28 Simulator Server
+After=network.target
+
+[Service]
+Type=simple
+User=turnip28
+WorkingDirectory=/opt/turnip28
+ExecStart=/opt/turnip28/turnip28-server --headless
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

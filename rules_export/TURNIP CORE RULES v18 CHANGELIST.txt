@@ -1,0 +1,176 @@
+TURNIP CORE RULES v18 PLAYTEST CHANGELIST
+
+Cover Alteration: Harness Moon
+
+Page 03: 
+Turnip Miniatures: Mentioned Official Turnip minis, but made sure to say kitbashing still equal focus. 
+Made to Measure: Changed 1” = 2cm to 2.5cm.
+
+Page 05: 
+Characteristics: Changed Movement description to be more accurate, Vulnerability, added more flavour.
+Improbable Hits: Changed to Improbable Characteristics to prevent confusion, and changed wording to clear up 8+, 9+ etc. 	 (a 6 then 4+.)
+
+Page 09: 
+1” Rule: Clarified question about 1" placement and retreats.
+
+Page 10: 
+Orders: Added clarification to make sure players know units can only perform 1 order a round. QUESTION: Is this clear enough?
+
+Page 12: 
+Moving Snobs with Followers: Simplified this mechanic a little and added more clarifications. See full entry for rules.
+
+Page 13: 
+Shooting Engagements: Clarification of units with CC weapons and a weapons range in their profile not being able to shoot.
+Line of Sight: Clarification with terrain blocking LOS. CHANGE: Snobs now block line of sight.
+
+Page 14: 
+Shooting Attack Sequence: Cleared up sequencing dice rolling.
+
+Page 15:
+I and V rolls: Clarified its only 1 roll per model when shooting. 
+Winners and Losers: Clarified, winners stay where they are, losers retreat.
+
+Page 16: 
+Charging: Clarified Blunder and Charge distance order. You pick your charge target AFTER you roll to blunder. If there’s no one in range, your unit remains in place. QUESTION: Is this Clear?
+
+Page 17: 
+Failed Charges: Further clarifications in line with above.
+Charging and the 1” Rule: Clarification to clear up how to charge around units.
+
+Page 18: 
+Melee Attacks: Clarified that melee attacks are inaccuracy rolls and not just rolling d6s.
+
+Page 19: 
+Panic Tests: Clarified that a charging unit moves After the panicking unit retreats.
+Panic Tests and Fearless Units: Clarified some issues with fearless and positioning and moved relevant parts to Brutes.
+
+Page 20: 
+Retreat Sequence: Cleaned up a few words. Added "Retreating Off the Board", moved from impassable terrain.
+
+Page 22: 
+Dangerous Terrain Test: Clarified How to succeed and fail DT tests. 
+
+Page 23:
+Capturing Contested Objectives: Clarified what happens with 2 units on an objective. QUESTION: Can I leave this for team games to sort out themselves? CHANGE: units can no longer Cap 2 objectives in one order.
+
+Page 25:
+Scenario Blunder: CHANGE: Increased panic gained from 3 to 4.
+
+Page 26:
+Scenario Blunder: CHANGE: Unit takes DT test before charging.
+
+
+Page 28: 
+Equipment: Considered to be equipped clarification.
+
+------- CORE UNITS ------
+
+Page 31: 
+
+NERF Whelps can no longer capture 2 objectives at a time with Dash.
+
+Page 32:
+
+BUFF Stump Gun Grapeshot increased to 18”.
+Clarifications of what happens when Stump Gun loses in melee. 
+Clarification of prelim bombardment. Only its owner gets to shoot.
+
+LUMP ADDED... see external Lump PDF. Painting a full page piece to go next to him. 
+
+------- CULTS ------
+
+Page 34: STRANGLING HARRY'S WRETCHED RECRUITS
+
+NERF Rootlings Cannot capture objectives the round they are placed back on the board with uproot.
+------
+
+Page 36:THE SLUG'S LAMENT
+
+NERF Grogs V5+ changed to V6+
+NERF: Old Guard's arrival restricted somewhat.
+------
+
+Page 38:TOD'S FOLLY
+
+BUFF: Tod Off!: Tod wins if he loses a Toff Off!
+------
+
+Page 40: THE FUNGIVOROUS HERD
+
+NERF: The Herd Vuln changed to 6+. Stampede Changed to +6” Movement. QUESTION: Should Stampede add +1 A as well? 
+------
+
+Page 42: THE GRAND BOMBARD
+
+NERF Grand Bombard: Can no longer take Stump Guns.
+------
+
+Page 44: THE BROTHERHOOD OF GREED
+
+NERF: Mutations:Bulbous -1 V instead of -2, Tuberous Tendrils +1 A instead of +2.
+------
+
+Page 48: THE PROCESSION OF WOE
+
+BUFF: Rootshrine: U Shrine increased range, from 18 to 24”.  Wounds increased to 5 (from 4).
+------
+
+50: THE RED RIBBON SOCIETY: 
+
+REWORK: Tuft Tokens generate with panic tokens. Upgrade your units every turn, grow a lump. QUESTION: How is the economy? Does the trigger and placing of Tufts slow down the game too much? Can you remember all the upgrades? 
+BUFF: PLOTS now DEF (defensible terrain) for friendly units. 
+------
+
+52: FEAST OF CHARYBDIS
+
+NERF: Scuttlers: Movement 10 -> 6", more interactive. 
+NERF: Rise From the Silt: Burrow limit to 1 unit a round. Counts as an order.
+BUFF: Can unburrow anywhere outside of 12” with blunder risk.
+------
+
+54: KNIGHTS OF SHELLWOOD
+
+NERF: Lumps exist now 
+BUFF: Snail Knight: BP Snail fires mini cannon shot, counter to Lump. 
+BUFF Mucous Maneuver: Every Turn but less reliable.
+CHANGE: Extra Turn Removed (was a bit of a pain for tournaments) 
+------
+
+56: LOPERS OF THE MAUDLIN MARSH
+
+CHANGE Lopers: 6 -> 4 Models, V7-> V6, Can take any equipment. Retreating over units cause DT tests for that unit.
+BUFF: BOTH armies’ followers are exposed.
+------
+
+58: AUNTS ASCENDANT
+
+NERF: Balloon: Movement reduced to 12”. Can’t cause unlimited DT tests. 
+BUFF: Snarky Tourists: Moved to global ability. Mirror match tweaked.
+------
+
+60: LEECH LOVERS
+
+REWORK: OH NO! Another attempt to make em fun. Theme is panic tokens cause wounds combined with lifesteal. QUESTION: How does this feel when fighting Cults that manipulate panic. Is it too oppressive?
+------
+
+62: UPRISING OF THE LOUSE
+
+REWORK: Attempt to make the Tall Man more interactive. 4 years of horror and sacrifice have brought the construct to some limited form of life.  =
+Aim to make blundering theme more consistent. Now Rabble is just a generic theme for your units, old rabble were fun, but broke the activation economy. QUESTION: How does this play with scenario blunders?
+------  
+
+64: SAINT ALAMIES ROCKET BATTERY 
+
+BUFF: Rocket Battery: Rockets can move, and are less likely to explode, 7+ to 5+ Vuln.
+BUFF: Pocket Rockets: Trigger on retreat and only target enemy followers. 
+------  
+
+66: Swelling
+
+NERF Swelling: When placed no longer kills a model. Tendrils cause panic tokens instead of DT tests. 
+NERF: Its Everywhere: NERF single model units only fail DT test on a 1.
+NERF: Rootlings cant cap when they return (see Harry), can only take 2 max. 
+
+------  
+
+

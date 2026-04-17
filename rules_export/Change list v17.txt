@@ -1,0 +1,52 @@
+v17 change list.
+
+General: A LOT of spelling mistakes corrected, page refs added. Cover icon, now with spikes for v17.  
+
+p09. Simplified Initiative rule. Now stays with the same person entire game. 
+
+p12. Updated moving Snobs to make sense with the updated Dash Special Rule. 
+
+p17. Clarified Charging Rule. Its Impossible to charge off the board edge. 
+
+p19. Clarified catching units with a charge and what happens when a charging unit cannot reach its target. Fearless added here. 
+
+p20. Simplified retreating through units and DT tests. Now ONLY followers (both friendly and enemy) cause DT test on retreat. 
+
+p29. Toff Off! simplified.  
+
+p30. BUFF Fodder Safety in Numbers rules made easier to remember.
+
+p30. Vanguard changed to work better with more unusual scenarios. 
+
+p30. BUFF Whelp's Dash changed to a free Move after an order, NERF Vulnerability changed to 6+.  
+
+p30. NERF Bastards reduced to 2 Wounds. 
+
+P32. Clarfied Stump Gun Movement. It can never be moved.
+
+p34. BUFF Stranglin' Harry, Rootlings now 6 models, CC weapons and have Uproot: can respawn in DT (but keep panic tokens), Harry's Method removes 3! panic tokens 
+
+p38. BUFF Tod's Folly, Added Absolute Chaos, Causes Chain Routs. Tod Off! simplified. 
+
+p40. BUFF Units do not recieve a panic token from failed Dangerous Terrain tests
+
+p42. NERF Grand Bombard can't used spotter buff for Preliminary Bombardment. BUFF Snobs can capture Objectives
+
+p48. BUFF Procession of Woe, increased range of Shrine, Zealots now extra attack on 2 panic (down from 3)
+
+p50. NERF Red Ribbon Society, Can no longer add shooting attacks to Stump Guns. 
+
+p52. BUFF The Feast of Charybdis, Rework of Burrowing, Crabs stats increased. M 10, A 10, I 5+, W 5, V 5+. Limit 2 Scuttlers. 
+
+p54. BUFF Knights of Shellwood, Snail Knights increased A to 6. 
+
+p56. BUFF Lopers of Maudlin Marsh, Rework. EVERYONE retreats forward. Lopers 2 W, V 7+. Stilt Spotters no more Wobble. Stilts now give all units Exposed. 
+
+p58. NERF Aunts Ascendant, Balloon weaker to melee. 
+
+p60. COMPLETE REWORK Leech lovers, now about Healing wounds by doing wounds in melee.
+
+p62. COMPLETE REWORK Uprising of the Louse, Rabble Rabble Rabble.
+
+p66. NERF Temple of Swellings. Reduced power of Tendrils, BUFF new Rootlings, can respawn near swelling.  
+

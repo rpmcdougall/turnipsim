@@ -1,0 +1,9 @@
+# Godot 4 generated
+.godot/
+.import/
+
+# Export credentials
+export_credentials.cfg
+
+# Mono (if C# ever used)
+.mono/
