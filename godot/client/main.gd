@@ -7,3 +7,7 @@ func _ready() -> void:
 
 func _on_test_roll_button_pressed() -> void:
 	get_tree().change_scene_to_file("res://client/scenes/test_roll.tscn")
+
+
+func _on_multiplayer_button_pressed() -> void:
+	get_tree().change_scene_to_file("res://client/scenes/lobby.tscn")

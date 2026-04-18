@@ -1,7 +1,7 @@
 extends SceneTree
 ## Headless test runner for Phase 1 game logic.
 ##
-## Run with: godot --headless --script tests/test_runner.gd
+## Run with: godot --headless -s tests/test_runner.gd
 
 var _tests_passed: int = 0
 var _tests_failed: int = 0
