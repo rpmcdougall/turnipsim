@@ -20,20 +20,26 @@ jobs:
           unzip Godot_v4.6.2-stable_linux.x86_64.zip
           chmod +x Godot_v4.6.2-stable_linux.x86_64
 
+      - name: Import project assets
+        working-directory: godot
+        run: |
+          ../Godot_v4.6.2-stable_linux.x86_64 --headless --import
+        timeout-minutes: 2
+
       - name: Run Phase 1 tests
         working-directory: godot
         run: |
-          ../Godot_v4.6.2-stable_linux.x86_64 --headless --script tests/test_runner.gd
+          ../Godot_v4.6.2-stable_linux.x86_64 --headless -s tests/test_runner.gd --quit
         timeout-minutes: 2
 
       - name: Validate UI scenes
         working-directory: godot
         run: |
-          ../Godot_v4.6.2-stable_linux.x86_64 --headless --script tests/test_ui_instantiate.gd
+          ../Godot_v4.6.2-stable_linux.x86_64 --headless -s tests/test_ui_instantiate.gd --quit
         timeout-minutes: 2
 
       - name: Validate Phase 3 scenes
         working-directory: godot
         run: |
-          ../Godot_v4.6.2-stable_linux.x86_64 --headless --script tests/test_phase3_scenes.gd
+          ../Godot_v4.6.2-stable_linux.x86_64 --headless -s tests/test_phase3_scenes.gd --quit
         timeout-minutes: 2
