@@ -70,6 +70,66 @@ func set_ready(ready: bool) -> void:
 			# Phase 3b will handle game_started broadcast
 
 
+## Client RPC: Submit army (Phase 3b)
+@rpc("any_peer", "call_remote", "reliable")
+func submit_army(army_data: Array) -> void:
+	var peer_id = multiplayer.get_remote_sender_id()
+	print("[NetworkServer] Peer %d submitting army (%d units)" % [peer_id, army_data.size()])
+
+	var room = room_manager.get_room_for_peer(peer_id)
+	if not room:
+		_send_error_to_client(peer_id, "Not in a room")
+		return
+
+	# Validate army size
+	if army_data.size() < 5 or army_data.size() > 10:
+		_send_error_to_client(peer_id, "Invalid army size (must be 5-10 units)")
+		return
+
+	# Store army in room state
+	var player = room.get_player(peer_id)
+	if player.is_empty():
+		_send_error_to_client(peer_id, "Player not found in room")
+		return
+
+	player["army"] = army_data
+
+	# Broadcast to all players in room
+	for p in room.players:
+		_send_army_submitted.rpc_id(p["peer_id"], peer_id, army_data.size())
+
+	# Check if both armies are submitted
+	if _are_both_armies_submitted(room):
+		_start_game(room)
+
+
+## Helper: Check if both players have submitted armies
+func _are_both_armies_submitted(room) -> bool:
+	if room.players.size() != 2:
+		return false
+
+	for player in room.players:
+		if player["army"].is_empty():
+			return false
+
+	return true
+
+
+## Helper: Start the game (Phase 3b)
+func _start_game(room) -> void:
+	print("[NetworkServer] Starting game for room %s" % room.code)
+
+	# Transition room to "active"
+	room.status = "active"
+
+	# Initialize game state
+	var game_state = _initialize_game_state(room)
+
+	# Broadcast to all players
+	for player in room.players:
+		_send_game_started.rpc_id(player["peer_id"], game_state)
+
+
 ## Server → Client: Room joined successfully
 @rpc("authority", "call_remote", "reliable")
 func _send_room_joined(room_data: Dictionary) -> void:
@@ -94,7 +154,57 @@ func _send_error(message: String) -> void:
 	pass  # Implemented on client
 
 
+## Server → Client: Army submitted (Phase 3b)
+@rpc("authority", "call_remote", "reliable")
+func _send_army_submitted(peer_id: int, army_size: int) -> void:
+	pass  # Implemented on client
+
+
+## Server → Client: Game started (Phase 3b)
+@rpc("authority", "call_remote", "reliable")
+func _send_game_started(game_state: Dictionary) -> void:
+	pass  # Implemented on client
+
+
 ## Helper to send error to a specific client
 func _send_error_to_client(peer_id: int, message: String) -> void:
 	print("[NetworkServer] Sending error to peer %d: %s" % [peer_id, message])
 	_send_error.rpc_id(peer_id, message)
+
+
+## Helper: Initialize game state from room data (Phase 3b)
+func _initialize_game_state(room) -> Dictionary:
+	var units: Array = []
+	var unit_id_counter: int = 0
+
+	# Convert armies to UnitState structures
+	for player in room.players:
+		for unit_dict in player["army"]:
+			# Create UnitState data
+			var unit_state = {
+				"id": "unit_%d" % unit_id_counter,
+				"owner_seat": player["seat"],
+				"name": unit_dict["name"],
+				"archetype": unit_dict["archetype"],
+				"base_stats": unit_dict["base_stats"],
+				"weapon": unit_dict["weapon"],
+				"mutations": unit_dict.get("mutations", []),
+				"max_wounds": unit_dict["base_stats"]["wounds"],  # Will be adjusted by mutations later
+				"current_wounds": unit_dict["base_stats"]["wounds"],
+				"x": -1,  # Not placed yet
+				"y": -1,
+				"has_activated": false,
+				"is_dead": false
+			}
+			units.append(unit_state)
+			unit_id_counter += 1
+
+	return {
+		"room_code": room.code,
+		"phase": "placement",  # Start with placement phase
+		"current_turn": 1,
+		"active_seat": 1,  # Seat 1 starts
+		"units": units,
+		"action_log": [],
+		"winner_seat": 0
+	}
