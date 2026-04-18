@@ -38,7 +38,7 @@ godot/
 - [x] **Phase 0** — Project scaffold (commit d2f127b)
 - [x] **Phase 1** — Game data: types, simplified ruleset JSON, army roller (commit 9b9b2c1)
 - [x] **Phase 2** — Army rolling UI (client-side, no networking) (commit ab201f5)
-- [ ] **Phase 3** — ENet networking, lobby, room management
+- [x] **Phase 3** — ENet networking, lobby, room management (commit 91047e5)
 - [ ] **Phase 4** — Battle gameplay (server-authoritative)
 - [ ] **Phase 5** — Polish, multiple rulesets
 - [ ] **Phase 6** — Export presets, deployment
