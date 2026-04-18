@@ -460,7 +460,11 @@ func _mock_game_state() -> Types.GameState:
 	unit4.x = -1
 	unit4.y = -1
 
-	state.units = [unit1, unit2, unit3, unit4]
+	# Append to typed array
+	state.units.append(unit1)
+	state.units.append(unit2)
+	state.units.append(unit3)
+	state.units.append(unit4)
 
 	return state
 
