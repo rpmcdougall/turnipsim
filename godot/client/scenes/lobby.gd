@@ -48,6 +48,9 @@ func _ready() -> void:
 	multiplayer.connection_failed.connect(_on_connection_failed)
 	multiplayer.server_disconnected.connect(_on_server_disconnected)
 
+	# Ensure army UI nodes exist (create programmatically if needed)
+	_ensure_army_ui_exists()
+
 	# Initialize army UI
 	if submit_army_button:
 		submit_army_button.disabled = true
@@ -276,6 +279,61 @@ func _create_unit_panel(number: int, unit: Types.Unit) -> PanelContainer:
 	vbox.add_child(weapon_label)
 
 	return panel
+
+
+## Ensure army UI nodes exist (create programmatically if missing from .tscn)
+func _ensure_army_ui_exists() -> void:
+	# Find the InRoomPanel VBoxContainer
+	var in_room_vbox = in_room_panel.get_node_or_null("VBoxContainer")
+	if not in_room_vbox:
+		push_error("[Lobby] InRoomPanel/VBoxContainer not found")
+		return
+
+	# Check if nodes already exist (manually added to .tscn)
+	if roll_army_button != null and submit_army_button != null and army_display != null:
+		print("[Lobby] Army UI nodes already exist in scene")
+		return
+
+	print("[Lobby] Creating army UI nodes programmatically...")
+
+	# Create RollArmyButton
+	if not roll_army_button:
+		roll_army_button = Button.new()
+		roll_army_button.name = "RollArmyButton"
+		roll_army_button.text = "Roll Army"
+		roll_army_button.custom_minimum_size = Vector2(0, 40)
+		roll_army_button.pressed.connect(_on_roll_army_button_pressed)
+		in_room_vbox.add_child(roll_army_button)
+
+	# Create ArmyScrollContainer
+	var scroll_container = in_room_vbox.get_node_or_null("ArmyScrollContainer")
+	if not scroll_container:
+		scroll_container = ScrollContainer.new()
+		scroll_container.name = "ArmyScrollContainer"
+		scroll_container.custom_minimum_size = Vector2(0, 200)
+		scroll_container.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+		scroll_container.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+		in_room_vbox.add_child(scroll_container)
+
+	# Create ArmyDisplay (VBoxContainer inside ScrollContainer)
+	if not army_display:
+		army_display = VBoxContainer.new()
+		army_display.name = "ArmyDisplay"
+		army_display.size_flags_horizontal = Control.SIZE_FILL
+		army_display.size_flags_vertical = Control.SIZE_FILL
+		scroll_container.add_child(army_display)
+
+	# Create SubmitArmyButton
+	if not submit_army_button:
+		submit_army_button = Button.new()
+		submit_army_button.name = "SubmitArmyButton"
+		submit_army_button.text = "Submit Army"
+		submit_army_button.disabled = true  # Enabled after rolling
+		submit_army_button.custom_minimum_size = Vector2(0, 40)
+		submit_army_button.pressed.connect(_on_submit_army_button_pressed)
+		in_room_vbox.add_child(submit_army_button)
+
+	print("[Lobby] Army UI nodes created successfully")
 
 
 ## Submit Army button
