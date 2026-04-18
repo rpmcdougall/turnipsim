@@ -17,18 +17,43 @@ const PORT = 9999
 @onready var players_list = $MarginContainer/VBoxContainer/InRoomPanel/VBoxContainer/PlayersList
 @onready var ready_button = $MarginContainer/VBoxContainer/InRoomPanel/VBoxContainer/ReadyButton
 
+# Army UI nodes (TODO: Add these to lobby.tscn scene)
+@onready var roll_army_button = $MarginContainer/VBoxContainer/InRoomPanel/VBoxContainer/RollArmyButton
+@onready var submit_army_button = $MarginContainer/VBoxContainer/InRoomPanel/VBoxContainer/SubmitArmyButton
+@onready var army_display = $MarginContainer/VBoxContainer/InRoomPanel/VBoxContainer/ArmyScrollContainer/ArmyDisplay
+
 # State
 var is_connected: bool = false
 var is_in_room: bool = false
 var current_room_data: Dictionary = {}
 var my_peer_id: int = 0
 
+# Army state
+var ruleset: Ruleset = null
+var my_army: Array[Types.Unit] = []
+var has_submitted_army: bool = false
+
 
 func _ready() -> void:
+	# Load ruleset (cache for army rolling)
+	ruleset = Ruleset.new()
+	var error = ruleset.load_from_file("res://game/rulesets/mvp.json")
+	if error:
+		push_error("[Lobby] Failed to load ruleset: " + error)
+		status_label.text = "Error: Failed to load ruleset"
+		return
+
 	# Set up multiplayer signals
 	multiplayer.connected_to_server.connect(_on_connected_to_server)
 	multiplayer.connection_failed.connect(_on_connection_failed)
 	multiplayer.server_disconnected.connect(_on_server_disconnected)
+
+	# Ensure army UI nodes exist (create programmatically if needed)
+	_ensure_army_ui_exists()
+
+	# Initialize army UI
+	if submit_army_button:
+		submit_army_button.disabled = true
 
 
 ## Connect to server button
@@ -67,6 +92,7 @@ func _disconnect_from_server() -> void:
 	multiplayer.multiplayer_peer = null
 	is_connected = false
 	is_in_room = false
+	NetworkManager.reset_seat()  # Clear seat assignment
 	status_label.text = "Disconnected"
 	_show_connection_panel()
 
@@ -179,6 +205,162 @@ func _update_players_list() -> void:
 		players_list.add_child(label)
 
 
+## Roll Army button
+func _on_roll_army_button_pressed() -> void:
+	if not is_in_room or not ruleset:
+		return
+
+	print("[Lobby] Rolling army...")
+
+	# Roll a new army using real RNG
+	var roller = ArmyRoller.new()
+	my_army = roller.roll_army(ruleset, func(): return randi_range(1, 6))
+
+	# Display the army
+	_display_army()
+
+	# Enable submit button
+	if submit_army_button:
+		submit_army_button.disabled = false
+
+	status_label.text = "Army rolled! (%d units)" % my_army.size()
+
+
+## Display the rolled army
+func _display_army() -> void:
+	if not army_display:
+		return
+
+	# Clear previous display
+	for child in army_display.get_children():
+		child.queue_free()
+
+	# Display army info
+	var header = Label.new()
+	header.text = "Your Army: %d units" % my_army.size()
+	header.add_theme_font_size_override("font_size", 16)
+	army_display.add_child(header)
+
+	# Display each unit (compact version)
+	for i in range(my_army.size()):
+		var unit = my_army[i]
+		var unit_panel = _create_unit_panel(i + 1, unit)
+		army_display.add_child(unit_panel)
+
+
+## Create a panel for displaying a unit (reused from test_roll.gd)
+func _create_unit_panel(number: int, unit: Types.Unit) -> PanelContainer:
+	var panel = PanelContainer.new()
+	var vbox = VBoxContainer.new()
+	panel.add_child(vbox)
+
+	# Unit name and archetype
+	var name_label = Label.new()
+	name_label.text = "[%d] %s (%s)" % [number, unit.name, unit.archetype]
+	name_label.add_theme_font_size_override("font_size", 14)
+	vbox.add_child(name_label)
+
+	# Stats
+	var effective = unit.get_effective_stats()
+	var stats_label = Label.new()
+	stats_label.text = "M%d S%d C%d R%d W%d Sv%d+" % [
+		effective.movement,
+		effective.shooting,
+		effective.combat,
+		effective.resolve,
+		effective.wounds,
+		effective.save
+	]
+	vbox.add_child(stats_label)
+
+	# Weapon
+	var weapon_label = Label.new()
+	weapon_label.text = "%s (%s)" % [unit.weapon.name, unit.weapon.type]
+	vbox.add_child(weapon_label)
+
+	return panel
+
+
+## Ensure army UI nodes exist (create programmatically if missing from .tscn)
+func _ensure_army_ui_exists() -> void:
+	# Find the InRoomPanel VBoxContainer
+	var in_room_vbox = in_room_panel.get_node_or_null("VBoxContainer")
+	if not in_room_vbox:
+		push_error("[Lobby] InRoomPanel/VBoxContainer not found")
+		return
+
+	# Check if nodes already exist (manually added to .tscn)
+	if roll_army_button != null and submit_army_button != null and army_display != null:
+		print("[Lobby] Army UI nodes already exist in scene")
+		return
+
+	print("[Lobby] Creating army UI nodes programmatically...")
+
+	# Create RollArmyButton
+	if not roll_army_button:
+		roll_army_button = Button.new()
+		roll_army_button.name = "RollArmyButton"
+		roll_army_button.text = "Roll Army"
+		roll_army_button.custom_minimum_size = Vector2(0, 40)
+		roll_army_button.pressed.connect(_on_roll_army_button_pressed)
+		in_room_vbox.add_child(roll_army_button)
+
+	# Create ArmyScrollContainer
+	var scroll_container = in_room_vbox.get_node_or_null("ArmyScrollContainer")
+	if not scroll_container:
+		scroll_container = ScrollContainer.new()
+		scroll_container.name = "ArmyScrollContainer"
+		scroll_container.custom_minimum_size = Vector2(0, 200)
+		scroll_container.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+		scroll_container.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+		in_room_vbox.add_child(scroll_container)
+
+	# Create ArmyDisplay (VBoxContainer inside ScrollContainer)
+	if not army_display:
+		army_display = VBoxContainer.new()
+		army_display.name = "ArmyDisplay"
+		army_display.size_flags_horizontal = Control.SIZE_FILL
+		army_display.size_flags_vertical = Control.SIZE_FILL
+		scroll_container.add_child(army_display)
+
+	# Create SubmitArmyButton
+	if not submit_army_button:
+		submit_army_button = Button.new()
+		submit_army_button.name = "SubmitArmyButton"
+		submit_army_button.text = "Submit Army"
+		submit_army_button.disabled = true  # Enabled after rolling
+		submit_army_button.custom_minimum_size = Vector2(0, 40)
+		submit_army_button.pressed.connect(_on_submit_army_button_pressed)
+		in_room_vbox.add_child(submit_army_button)
+
+	print("[Lobby] Army UI nodes created successfully")
+
+
+## Submit Army button
+func _on_submit_army_button_pressed() -> void:
+	if not is_in_room or my_army.is_empty() or has_submitted_army:
+		return
+
+	print("[Lobby] Submitting army (%d units)" % my_army.size())
+
+	# Serialize army to dictionaries
+	var army_data: Array = []
+	for unit in my_army:
+		army_data.append(unit.to_dict())
+
+	# Send to server
+	submit_army.rpc_id(1, army_data)
+	has_submitted_army = true
+
+	# Disable buttons
+	if roll_army_button:
+		roll_army_button.disabled = true
+	if submit_army_button:
+		submit_army_button.disabled = true
+
+	status_label.text = "Army submitted! Waiting for opponent..."
+
+
 # =============================================================================
 # RPCs - Client calls to server
 # =============================================================================
@@ -198,6 +380,11 @@ func set_ready(ready: bool) -> void:
 	pass  # Server handles this
 
 
+@rpc("any_peer", "call_remote", "reliable")
+func submit_army(army_data: Array) -> void:
+	pass  # Server handles this
+
+
 # =============================================================================
 # RPCs - Server calls to client
 # =============================================================================
@@ -207,6 +394,13 @@ func _send_room_joined(room_data: Dictionary) -> void:
 	print("[Lobby] Joined room: %s" % room_data["code"])
 	current_room_data = room_data
 	is_in_room = true
+
+	# Extract and store our seat assignment
+	if room_data.has("players"):
+		for player in room_data["players"]:
+			if player["peer_id"] == my_peer_id:
+				NetworkManager.set_my_seat(player["seat"])
+				break
 
 	room_code_display.text = "Room: %s" % room_data["code"]
 	_update_players_list()
@@ -240,3 +434,27 @@ func _send_player_ready_changed(peer_id: int, ready: bool) -> void:
 func _send_error(message: String) -> void:
 	print("[Lobby] Error from server: %s" % message)
 	status_label.text = "Error: " + message
+
+
+@rpc("authority", "call_remote", "reliable")
+func _send_army_submitted(peer_id: int, army_size: int) -> void:
+	print("[Lobby] Peer %d submitted army (%d units)" % [peer_id, army_size])
+
+	# Update UI to show submission status
+	if peer_id == my_peer_id:
+		status_label.text = "Army submitted! Waiting for opponent..."
+	else:
+		status_label.text = "Opponent submitted their army (%d units)!" % army_size
+
+
+@rpc("authority", "call_remote", "reliable")
+func _send_game_started(game_state: Dictionary) -> void:
+	print("[Lobby] Game starting! Transitioning to battle... (My seat: %d)" % NetworkManager.my_seat)
+	status_label.text = "Game starting!"
+
+	# my_seat is already stored in NetworkManager from _send_room_joined
+	# The battle scene will read it from there
+
+	# Transition to battle scene
+	await get_tree().create_timer(0.5).timeout  # Brief delay for feedback
+	get_tree().change_scene_to_file("res://client/scenes/battle.tscn")

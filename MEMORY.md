@@ -1,36 +1,49 @@
 # Turnip28 Simulator - Project Memory
 
-**Last Updated:** 2026-04-17
-**Current Phase:** Phase 3 Complete, Phase 4 Next
-**Main Branch:** `5ccf02d`
+**Last Updated:** 2026-04-18
+**Current Phase:** Phase 4 Complete (Client UI)
+**Feature Branch:** `feature/phase-3b-4-battle` (PR #26)
 
 ## Project Status
 
 ### Completed Phases ✅
 
 - **Phase 0:** Project scaffold (commit d2f127b)
-- **Phase 1:** Game data layer (commit 9b9b2c1)
-  - types.gd, ruleset.gd, army_roller.gd, mvp.json
-  - 19 passing tests
+- **Phase 1:** Game data layer (commit 9b9b2c1) - 19 tests
 - **Phase 2:** Army rolling UI (commit ab201f5)
-  - test_roll.tscn, re-roll functionality
 - **Phase 3:** ENet networking & lobby (commit 91047e5)
-  - Server: ENet on port 9999, room manager, network RPCs
-  - Client: Lobby UI with connection, room management, ready system
+- **Phase 3b:** Army submission flow (commits 5afc56a-5d4296b)
+  - Battle state data structures (GameState, UnitState, EngineResult)
+  - Lobby army rolling UI with submit functionality
+  - Server submit_army RPC and game initialization
+  - NetworkManager seat tracking
 
-### Next Phase 🎯
+### Phase 4: Battle Gameplay ✅
 
-**Phase 4: Battle Gameplay (Server-Authoritative)**
-- Implement `game_engine.gd` with pure functions (move, shoot, charge, end turn)
-- Engine tests (deterministic, dice injected)
-- `Battle.tscn` UI: TileMap grid, unit sprites, click handling
-- Client sends `request_action` RPCs
-- Server validates, rolls dice, broadcasts `state_update`
-- Action log, turn banner, active player indicator
+**Status:** Implementation Complete (Awaiting Integration Testing)
 
-**Checkpoint Goal:** Two clients play full networked game against local server.
+**Server-side (commits 96a2140-9c0a6a1):**
+- ✅ `game_engine.gd`: 644 lines, pure functions (placement, combat, turns, victory)
+- ✅ `test_game_engine.gd`: 38 comprehensive tests (all passing)
+- ✅ `network_server.gd`: request_action RPC routing, dice rolling, victory checks
 
-### Remaining After Phase 4
+**Client-side (commits d6c012f-a38be87):**
+- ✅ `lobby.gd`: Programmatic army UI creation (_ensure_army_ui_exists)
+- ✅ `battle.gd`: Complete battle UI with programmatic scene generation (432 lines)
+  - State rendering, input handling, RPC communication
+  - Placement phase, combat phase, action log
+  - All RPC handlers including _send_error
+- ✅ `battle.tscn`: Minimal scene (Control root + script)
+- ✅ Issues #17, #18, #19 marked Done on project board
+
+**Documentation:**
+- ✅ `docs/wiki/Phase-4-UI-Programmatic.md` - Programmatic UI guide
+- ✅ `docs/wiki/UI-Implementation-Verification.md` - Verification report
+- ✅ `PHASE4_TESTING.md` - Manual testing procedures
+
+**Next:** End-to-end integration testing (2 clients + server, full game flow)
+
+### Remaining Phases
 
 - **Phase 5:** Polish (win conditions, visual polish, 2nd ruleset)
 - **Phase 6:** Export & deployment (VPS, binaries, systemd)
@@ -43,23 +56,23 @@
 ```
 godot/
 ├── game/           # Pure RefCounted logic (no Node deps)
-│   ├── types.gd    # Stats, Weapon, Mutation, Unit
+│   ├── types.gd    # Stats, Weapon, Mutation, Unit + GameState, UnitState, EngineResult
 │   ├── ruleset.gd  # JSON loader & validator
 │   ├── army_roller.gd  # roll_army(ruleset, roll_d6)
 │   └── rulesets/mvp.json
 ├── server/         # Server-only
 │   ├── server_main.gd      # ENet server (port 9999)
 │   ├── room_manager.gd     # Room creation, 6-char codes
-│   ├── network_server.gd   # RPC layer
-│   └── game_engine.gd      # TODO: Phase 4
+│   ├── network_server.gd   # RPC layer (lobby + battle)
+│   └── game_engine.gd      # ✅ Pure battle engine (644 lines, 38 tests)
 ├── client/         # Client-only
 │   ├── main.tscn           # Main menu
 │   ├── scenes/test_roll.tscn   # Army roller demo
-│   └── scenes/lobby.tscn   # Multiplayer lobby
+│   ├── scenes/lobby.gd     # ✅ Lobby + army submission
+│   └── scenes/battle.gd    # ✅ Battle UI (programmatic, 432 lines)
 └── tests/
-    ├── test_runner.gd      # 19 tests
-    ├── test_ui_instantiate.gd
-    └── test_phase3_scenes.gd
+    ├── test_runner.gd      # 19 tests (Phase 1)
+    └── test_game_engine.gd # 38 tests (Phase 4)
 ```
 
 ### Key Design Decisions
@@ -70,30 +83,45 @@ godot/
 4. **Dependency injection for dice:** `roll_d6: Callable` enables deterministic tests
 5. **Server-authoritative:** No client-side prediction (turn-based, latency OK)
 6. **6-char room codes:** Uppercase, excludes I/O/0/1
+7. **Player-controlled placement:** Interactive deployment phase before combat
+8. **Pure engine functions:** All game logic takes state + dice → new state
+9. **Programmatic UI:** All Phase 4 UI created in code (no manual Godot editor work)
 
 ---
 
-## Current Networking Flow
+## Battle Flow (Phase 3b + 4)
 
-1. **Connect:** Client → Server (ENet on 127.0.0.1:9999)
-2. **Create Room:** Client calls `create_room.rpc_id(1, display_name)`
-3. **Server Response:** `_send_room_joined.rpc_id(peer_id, room_data)`
-4. **Join Room:** Client calls `join_room.rpc_id(1, code, display_name)`
-5. **Broadcast:** Server notifies all players via `_send_peer_joined`
-6. **Ready Toggle:** Client calls `set_ready.rpc_id(1, bool)`
-7. **Sync:** Server broadcasts `_send_player_ready_changed` to all
+### Army Submission (Phase 3b)
+1. Client rolls army locally using ArmyRoller
+2. Client displays army in programmatically created ScrollContainer
+3. Client calls `submit_army.rpc_id(1, army_data)`
+4. Server validates (5-10 units) and stores in room.players[].army
+5. When both submitted → server initializes GameState
+6. Server broadcasts `_send_game_started` with initial state
+7. Clients transition to battle.tscn
 
-**Room State:**
-```gdscript
-{
-  "code": "ABC123",
-  "status": "lobby",  # or "active", "finished"
-  "players": [
-    {"peer_id": 123, "seat": 1, "display_name": "Alice", "ready": false, "army": []},
-    {"peer_id": 456, "seat": 2, "display_name": "Bob", "ready": false, "army": []}
-  ],
-  "max_players": 2
-}
+### Battle Gameplay (Phase 4)
+
+**Placement Phase:**
+- Active player places units in deployment zone (seat 1: rows 28-31, seat 2: rows 0-3)
+- Client: click grid → `request_action.rpc_id(1, {type: "place_unit", ...})`
+- Server: validate, update state, broadcast to all clients
+- Player confirms → switches to opponent or starts combat
+
+**Combat Phase:**
+- Alternating activations (each player activates all units before passing turn)
+- Client: click unit → select, click grid → move OR click enemy → attack
+- Actions: move, shoot (ranged), charge (melee), end_activation, end_turn
+- Server: validate, roll dice for attacks, apply damage, check victory
+- Victory: last unit standing
+
+**RPC Flow:**
+```
+Client → Server: request_action({type, ...params})
+Server: validate turn, apply GameEngine function, roll dice if needed
+Server → All: _send_action_resolved(action, result)
+Server → All: _send_state_update(new_state)
+Server → All: _send_game_ended(winner, reason) if victory
 ```
 
 ---
@@ -103,66 +131,52 @@ godot/
 ### Run Tests Locally
 ```bash
 cd godot/
-godot --headless -s tests/test_runner.gd
-godot --headless -s tests/test_ui_instantiate.gd
-godot --headless -s tests/test_phase3_scenes.gd
+
+# Phase 1 tests (19 tests)
+/Applications/Godot.app/Contents/MacOS/Godot --headless -s tests/test_runner.gd
+
+# Phase 4 engine tests (38 tests)
+/Applications/Godot.app/Contents/MacOS/Godot --headless -s tests/test_game_engine.gd
 ```
 
-### Run Server
+### Manual Integration Test
 ```bash
+# Terminal 1: Server
 cd godot/
-godot project.godot --server
+/Applications/Godot.app/Contents/MacOS/Godot project.godot --server
+
+# Terminal 2: Client 1
+/Applications/Godot.app/Contents/MacOS/Godot project.godot
+
+# Terminal 3: Client 2
+/Applications/Godot.app/Contents/MacOS/Godot project.godot
 ```
 
-### Run Client
-```bash
-cd godot/
-godot project.godot
-```
-
-### CI
-- GitHub Actions on PR to main, push to main
-- Downloads Godot 4.6.2 headless
-- Runs all test suites
-- Uses `-s` flag (not `--script`) to load project context
-
----
-
-## Workflow
-
-### Feature Branch Process (Established Phase 3+)
-1. Create branch: `git checkout -b feature/phase-N-description`
-2. Implement with modular commits
-3. Push: `git push -u origin feature/phase-N-description`
-4. Create PR: `gh pr create --title "..." --body "..."`
-5. CI validates automatically
-6. Merge via squash after approval
-7. Update CLAUDE.md phase status
-8. Update GitHub project board
-
-### Commit Format
-```
-<type>(<scope>): <description>
-
-[optional body]
-
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
-
-Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
-```
-
-Types: `feat`, `fix`, `docs`, `test`, `refactor`, `ci`, `chore`
+**Test Flow:**
+1. Client 1: Multiplayer Lobby → Create Room
+2. Client 2: Multiplayer Lobby → Join Room (enter code)
+3. Both: Roll Army → Submit Army
+4. Verify transition to battle.tscn
+5. Test placement phase (click grid to place units)
+6. Test combat phase (select, move, attack)
+7. Verify action log updates
+8. Play until victory
 
 ---
 
 ## GitHub Project Board
 
 **Project:** TurnipSim v0.1 (project #1)
-- Phase 1: Issues #1-5 (All Done)
+- Phase 1: Issues #1-5 (Done)
 - Phase 2: Issue #6 (Done)
 - Phase 3: Issues #7-8 (Done)
+- Phase 3b: Issues #10-13 (Done)
+- Phase 4: Issues #14-19 (Done)
+- Phase 5: Issues #20-22 (Todo)
+- Phase 6: Issues #23-25 (Todo)
 
-**Update after each phase completion.**
+**Branch:** `feature/phase-3b-4-battle` (PR #26 open)
+**Last Updated:** 2026-04-18
 
 ---
 
@@ -172,82 +186,59 @@ Types: `feat`, `fix`, `docs`, `test`, `refactor`, `ci`, `chore`
 - `CLAUDE.md` — Phase status, architecture overview
 - `turnip28-sim-plan-godot.md` — Full roadmap (Phases 0-6)
 - `CONTRIBUTING.md` — Feature branch workflow
-- `phase1-review.md` — Phase 1 comprehensive review
-- `PHASE2_TESTING.md` — Phase 2 manual test instructions
-- `PHASE3_TESTING.md` — Phase 3 manual test instructions (2 clients + server)
+- `PHASE4_TESTING.md` — Manual integration test procedures
+
+### Wiki (`docs/wiki/`)
+- `Home.md` — Wiki navigation
+- `Development-Process.md` — Workflow, branches, commits
+- `Code-Style-Guide.md` — GDScript conventions
+- `Testing-Guidelines.md` — Test procedures
+- `Phase-4-UI-Programmatic.md` — Programmatic UI implementation guide
+- `UI-Implementation-Verification.md` — Implementation verification report
 
 ### Checkpoints
-- `memory/checkpoint-2026-04-17-phases-1-2-3.md` — This session
-
----
-
-## Phase 4 Planning Notes
-
-### game_engine.gd Functions Needed
-```gdscript
-# Pure functions (state + action + dice → new state)
-func move_unit(state, unit_id, x, y) -> Result
-func resolve_shoot(state, attacker_id, target_id, dice) -> Result
-func resolve_charge(state, attacker_id, target_id, dice) -> Result
-func end_activation(state, seat) -> Result
-func end_turn(state) -> Result
-```
-
-### Battle.tscn Components
-- TileMap grid (48×32 cells recommended)
-- Unit sprites (placeholder sprites OK)
-- Click handling for unit selection
-- Action log sidebar (ScrollContainer with Labels)
-- Turn banner (whose turn, turn number)
-- Active player indicator
-
-### RPC Flow (Phase 4)
-1. Client sends: `request_action.rpc_id(1, {"type": "move", "unit_id": "...", "x": 5, "y": 3})`
-2. Server validates, rolls dice if needed, applies engine
-3. Server broadcasts: `state_update.rpc(units_delta)` and `action_resolved.rpc(action, dice, result)`
-4. Clients re-render from server state
-
-**No client-side prediction in MVP.** Clients wait for server confirmation.
+- `memory/checkpoint-2026-04-17-phases-1-2-3.md` — Previous session
+- `memory/checkpoint-2026-04-18-phase-4-ui.md` — This session (programmatic UI)
 
 ---
 
 ## Commands Quick Reference
 
 ```bash
+# Godot executable path (macOS)
+GODOT="/Applications/Godot.app/Contents/MacOS/Godot"
+
 # Run server
-godot --server
+$GODOT project.godot --server
 
 # Run client
-godot
+$GODOT project.godot
 
 # Run tests
-godot --headless -s tests/test_runner.gd
+$GODOT --headless -s tests/test_game_engine.gd
 
-# Create feature branch
-git checkout -b feature/phase-4-battle
+# Git workflow
+git status
+git log --oneline -10
+git push
 
-# Push and create PR
-git push -u origin feature/phase-4-battle
-gh pr create --title "feat(phase4): implement battle gameplay"
-
-# Update project board
-gh project item-list 1 --owner rpmcdougall
-gh project item-edit --project-id PVT_kwHOAG78Fc4BU8gp --id <ITEM_ID> \
-  --field-id PVTSSF_lAHOAG78Fc4BU8gpzhMIc_o --single-select-option-id 98236657
+# PR management
+gh pr view 26
+gh pr checks 26
 ```
 
 ---
 
 ## Session Discipline Reminders
 
-- [ ] Update MEMORY.md before `/clear` or session end
-- [ ] Create checkpoint between phases (`memory/checkpoint-YYYY-MM-DD-<topic>.md`)
-- [ ] Keep MEMORY.md under 200 lines (archive old content to `memory/history.md`)
-- [ ] Update GitHub project board after phase completion
-- [ ] Use feature branches for all new phases
-- [ ] Make modular commits (one logical unit per commit)
+- [x] Update MEMORY.md before `/clear` or session end
+- [x] Create checkpoint between phases
+- [x] Keep MEMORY.md under 200 lines (currently 184)
+- [x] Update GitHub project board after phase completion
+- [x] Use feature branches for all new phases
+- [x] Make modular commits (one logical unit per commit)
 
 ---
 
-**Last checkpoint:** memory/checkpoint-2026-04-17-phases-1-2-3.md
-**Next session:** Start Phase 4 (Battle Gameplay)
+**Last checkpoint:** `memory/checkpoint-2026-04-18-phase-4-ui.md`
+**Next work:** Manual integration testing (full game flow) OR merge PR #26
