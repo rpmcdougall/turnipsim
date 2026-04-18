@@ -20,17 +20,17 @@ Welcome to the Turnip28 Simulator development wiki. This documentation covers pr
 - [Development Process](Development-Process.md) - Workflow, branches, commits
 - [Code Style Guide](Code-Style-Guide.md) - GDScript conventions and patterns
 - [Testing Guidelines](Testing-Guidelines.md) - Writing and running tests
+- [Manual Testing Guide](Manual-Testing-Guide.md) - Phase 4 integration testing
 - [Debugging Guide](Debugging-Guide.md) - Common issues and troubleshooting
 
+### Implementation Tasks
+- [Phase 4 UI Tasks](Phase-4-UI-Tasks.md) - Godot editor work for issues #17, #18, #19
+
 ### Project Management
-- [Phase Roadmap](Phase-Roadmap.md) - Development phases and milestones
-- [Release Process](Release-Process.md) - Creating and deploying releases
 - [Session Discipline](Session-Discipline.md) - Documentation and memory management
 
 ### Reference
 - [Commit Conventions](Commit-Conventions.md) - Message format and types
-- [RPC Protocol](RPC-Protocol.md) - Network communication reference
-- [Game Engine API](Game-Engine-API.md) - Core game logic reference
 
 ## External Links
 

@@ -40,12 +40,15 @@ Comprehensive process and procedure documentation for Turnip28 Simulator develop
 3. **Learn the workflow:** [Development Process](Development-Process.md)
 4. **Write code:** [Code Style Guide](Code-Style-Guide.md)
 5. **Add tests:** [Testing Guidelines](Testing-Guidelines.md)
+6. **Test manually:** [Manual Testing Guide](Manual-Testing-Guide.md)
 
 ### For Existing Contributors
 
 - **Starting a session?** Review [Session Discipline](Session-Discipline.md)
 - **Making commits?** Check [Commit Conventions](Commit-Conventions.md)
 - **Writing tests?** See [Testing Guidelines](Testing-Guidelines.md)
+- **Testing manually?** Follow [Manual Testing Guide](Manual-Testing-Guide.md)
+- **Implementing Phase 4 UI?** See [Phase 4 UI Tasks](Phase-4-UI-Tasks.md)
 - **Architecture questions?** Consult [Architecture Overview](Architecture-Overview.md)
 
 ## GitHub Wiki
