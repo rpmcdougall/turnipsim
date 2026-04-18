@@ -31,3 +31,9 @@ jobs:
         run: |
           ../Godot_v4.6.2-stable_linux.x86_64 --headless --script tests/test_ui_instantiate.gd
         timeout-minutes: 2
+
+      - name: Validate Phase 3 scenes
+        working-directory: godot
+        run: |
+          ../Godot_v4.6.2-stable_linux.x86_64 --headless --script tests/test_phase3_scenes.gd
+        timeout-minutes: 2
