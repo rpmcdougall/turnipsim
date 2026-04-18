@@ -10,3 +10,164 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 script = ExtResource("1")
+
+[node name="MarginContainer" type="MarginContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 20
+theme_override_constants/margin_top = 20
+theme_override_constants/margin_right = 20
+theme_override_constants/margin_bottom = 20
+
+[node name="VBoxContainer" type="VBoxContainer" parent="MarginContainer"]
+layout_mode = 2
+theme_override_constants/separation = 15
+
+[node name="TitleLabel" type="Label" parent="MarginContainer/VBoxContainer"]
+layout_mode = 2
+text = "Multiplayer Lobby"
+horizontal_alignment = 1
+
+[node name="HSeparator" type="HSeparator" parent="MarginContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="ConnectionPanel" type="PanelContainer" parent="MarginContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="VBoxContainer" type="VBoxContainer" parent="MarginContainer/VBoxContainer/ConnectionPanel"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="Label" type="Label" parent="MarginContainer/VBoxContainer/ConnectionPanel/VBoxContainer"]
+layout_mode = 2
+text = "Connection"
+
+[node name="HBoxContainer" type="HBoxContainer" parent="MarginContainer/VBoxContainer/ConnectionPanel/VBoxContainer"]
+layout_mode = 2
+
+[node name="ServerIPLabel" type="Label" parent="MarginContainer/VBoxContainer/ConnectionPanel/VBoxContainer/HBoxContainer"]
+layout_mode = 2
+text = "Server IP:"
+
+[node name="ServerIPInput" type="LineEdit" parent="MarginContainer/VBoxContainer/ConnectionPanel/VBoxContainer/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "127.0.0.1"
+placeholder_text = "127.0.0.1"
+
+[node name="HBoxContainer2" type="HBoxContainer" parent="MarginContainer/VBoxContainer/ConnectionPanel/VBoxContainer"]
+layout_mode = 2
+
+[node name="PlayerNameLabel" type="Label" parent="MarginContainer/VBoxContainer/ConnectionPanel/VBoxContainer/HBoxContainer2"]
+layout_mode = 2
+text = "Your Name:"
+
+[node name="PlayerNameInput" type="LineEdit" parent="MarginContainer/VBoxContainer/ConnectionPanel/VBoxContainer/HBoxContainer2"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Player"
+placeholder_text = "Enter your name"
+max_length = 20
+
+[node name="ConnectButton" type="Button" parent="MarginContainer/VBoxContainer/ConnectionPanel/VBoxContainer"]
+layout_mode = 2
+text = "Connect to Server"
+
+[node name="StatusLabel" type="Label" parent="MarginContainer/VBoxContainer/ConnectionPanel/VBoxContainer"]
+layout_mode = 2
+text = "Not connected"
+
+[node name="HSeparator2" type="HSeparator" parent="MarginContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="RoomPanel" type="PanelContainer" parent="MarginContainer/VBoxContainer"]
+visible = false
+layout_mode = 2
+
+[node name="VBoxContainer" type="VBoxContainer" parent="MarginContainer/VBoxContainer/RoomPanel"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="Label" type="Label" parent="MarginContainer/VBoxContainer/RoomPanel/VBoxContainer"]
+layout_mode = 2
+text = "Room Management"
+
+[node name="HBoxContainer" type="HBoxContainer" parent="MarginContainer/VBoxContainer/RoomPanel/VBoxContainer"]
+layout_mode = 2
+
+[node name="CreateRoomButton" type="Button" parent="MarginContainer/VBoxContainer/RoomPanel/VBoxContainer/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Create Room"
+
+[node name="JoinRoomButton" type="Button" parent="MarginContainer/VBoxContainer/RoomPanel/VBoxContainer/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Join Room"
+
+[node name="HBoxContainer2" type="HBoxContainer" parent="MarginContainer/VBoxContainer/RoomPanel/VBoxContainer"]
+layout_mode = 2
+
+[node name="RoomCodeLabel" type="Label" parent="MarginContainer/VBoxContainer/RoomPanel/VBoxContainer/HBoxContainer2"]
+layout_mode = 2
+text = "Room Code:"
+
+[node name="RoomCodeInput" type="LineEdit" parent="MarginContainer/VBoxContainer/RoomPanel/VBoxContainer/HBoxContainer2"]
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "Enter 6-character code"
+max_length = 6
+
+[node name="HSeparator3" type="HSeparator" parent="MarginContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="InRoomPanel" type="PanelContainer" parent="MarginContainer/VBoxContainer"]
+visible = false
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="VBoxContainer" type="VBoxContainer" parent="MarginContainer/VBoxContainer/InRoomPanel"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="RoomCodeDisplay" type="Label" parent="MarginContainer/VBoxContainer/InRoomPanel/VBoxContainer"]
+layout_mode = 2
+text = "Room: XXXXXX"
+horizontal_alignment = 1
+
+[node name="PlayersLabel" type="Label" parent="MarginContainer/VBoxContainer/InRoomPanel/VBoxContainer"]
+layout_mode = 2
+text = "Players:"
+
+[node name="PlayersList" type="VBoxContainer" parent="MarginContainer/VBoxContainer/InRoomPanel/VBoxContainer"]
+layout_mode = 2
+
+[node name="HSeparator" type="HSeparator" parent="MarginContainer/VBoxContainer/InRoomPanel/VBoxContainer"]
+layout_mode = 2
+
+[node name="ReadyButton" type="Button" parent="MarginContainer/VBoxContainer/InRoomPanel/VBoxContainer"]
+layout_mode = 2
+text = "Ready"
+toggle_mode = true
+
+[node name="LeaveRoomButton" type="Button" parent="MarginContainer/VBoxContainer/InRoomPanel/VBoxContainer"]
+layout_mode = 2
+text = "Leave Room"
+
+[node name="HSeparator4" type="HSeparator" parent="MarginContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="BackButton" type="Button" parent="MarginContainer/VBoxContainer"]
+layout_mode = 2
+text = "Back to Menu"
+
+[connection signal="pressed" from="MarginContainer/VBoxContainer/ConnectionPanel/VBoxContainer/ConnectButton" to="." method="_on_connect_button_pressed"]
+[connection signal="pressed" from="MarginContainer/VBoxContainer/RoomPanel/VBoxContainer/HBoxContainer/CreateRoomButton" to="." method="_on_create_room_button_pressed"]
+[connection signal="pressed" from="MarginContainer/VBoxContainer/RoomPanel/VBoxContainer/HBoxContainer/JoinRoomButton" to="." method="_on_join_room_button_pressed"]
+[connection signal="toggled" from="MarginContainer/VBoxContainer/InRoomPanel/VBoxContainer/ReadyButton" to="." method="_on_ready_button_toggled"]
+[connection signal="pressed" from="MarginContainer/VBoxContainer/InRoomPanel/VBoxContainer/LeaveRoomButton" to="." method="_on_leave_room_button_pressed"]
+[connection signal="pressed" from="MarginContainer/VBoxContainer/BackButton" to="." method="_on_back_button_pressed"]
