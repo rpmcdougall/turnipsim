@@ -3,6 +3,11 @@ extends SceneTree
 ##
 ## Run with: godot --headless --script tests/test_runner.gd
 
+# Preload game classes for headless mode
+const Types = preload("res://game/types.gd")
+const Ruleset = preload("res://game/ruleset.gd")
+const ArmyRoller = preload("res://game/army_roller.gd")
+
 var _tests_passed: int = 0
 var _tests_failed: int = 0
 
