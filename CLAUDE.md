@@ -36,7 +36,7 @@ godot/
 ## Phase Status
 
 - [x] **Phase 0** — Project scaffold (commit d2f127b)
-- [ ] **Phase 1** — Game data: types, simplified ruleset JSON, army roller
+- [x] **Phase 1** — Game data: types, simplified ruleset JSON, army roller (commit 9b9b2c1)
 - [ ] **Phase 2** — Army rolling UI (client-side, no networking)
 - [ ] **Phase 3** — ENet networking, lobby, room management
 - [ ] **Phase 4** — Battle gameplay (server-authoritative)
