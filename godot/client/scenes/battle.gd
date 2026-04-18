@@ -83,7 +83,8 @@ func _create_scene_structure() -> void:
 	placement_panel.add_child(placement_vbox)
 
 	var placement_label = Label.new()
-	placement_label.text = "Placement Phase"
+	placement_label.text = "Placement Phase - Click grid to place units"
+	placement_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	placement_vbox.add_child(placement_label)
 
 	confirm_placement_button = Button.new()
@@ -426,3 +427,9 @@ func _send_game_ended(winner_seat: int, reason: String) -> void:
 
 	turn_banner.text = message
 	_add_log_entry("=== GAME OVER: " + message + " ===")
+
+
+@rpc("authority", "call_remote", "reliable")
+func _send_error(message: String) -> void:
+	print("[Battle] Error from server: %s" % message)
+	_add_log_entry("Error: " + message)
