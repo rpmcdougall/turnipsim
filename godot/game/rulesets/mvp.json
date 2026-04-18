@@ -1,0 +1,249 @@
+{
+  "name": "MVP Simplified Ruleset",
+  "version": "1.0",
+  "description": "Simplified Turnip28-inspired rules for MVP",
+
+  "archetypes": {
+    "Toff": {
+      "name": "Toff",
+      "description": "Noble officers leading from behind",
+      "base_stats": {
+        "movement": 5,
+        "shooting": 4,
+        "combat": 4,
+        "resolve": 5,
+        "wounds": 2,
+        "save": 3
+      },
+      "mutation_tables": [
+        {
+          "name": "Noble Afflictions",
+          "rolls": [
+            {
+              "range": [1, 2],
+              "name": "Gouty Leg",
+              "description": "Swollen from excess",
+              "stat_modifiers": {"movement": -1, "wounds": 1}
+            },
+            {
+              "range": [3, 4],
+              "name": "Brass Lungs",
+              "description": "Bellowing voice of command",
+              "stat_modifiers": {"resolve": 1}
+            },
+            {
+              "range": [5, 6],
+              "name": "Dueling Scars",
+              "description": "Hardened by countless affairs of honor",
+              "stat_modifiers": {"combat": 1}
+            }
+          ]
+        },
+        {
+          "name": "Root Consumption",
+          "rolls": [
+            {
+              "range": [1, 2],
+              "name": "Turnip Rot",
+              "description": "Flesh softening to vegetable matter",
+              "stat_modifiers": {"save": -1, "wounds": 1}
+            },
+            {
+              "range": [3, 4],
+              "name": "Parsnip Eyes",
+              "description": "Sees through the mud and rain",
+              "stat_modifiers": {"shooting": 1}
+            },
+            {
+              "range": [5, 6],
+              "name": "Beetroot Heart",
+              "description": "Pumps with unnatural vigor",
+              "stat_modifiers": {"movement": 1}
+            }
+          ]
+        }
+      ]
+    },
+
+    "Chuff": {
+      "name": "Chuff",
+      "description": "Wretched rank-and-file infantry",
+      "base_stats": {
+        "movement": 4,
+        "shooting": 5,
+        "combat": 5,
+        "resolve": 4,
+        "wounds": 1,
+        "save": 5
+      },
+      "mutation_tables": [
+        {
+          "name": "Trench Afflictions",
+          "rolls": [
+            {
+              "range": [1, 2],
+              "name": "Mud Lung",
+              "description": "Coughs up black soil",
+              "stat_modifiers": {"resolve": -1}
+            },
+            {
+              "range": [3, 4],
+              "name": "Iron Stomach",
+              "description": "Can digest anything",
+              "stat_modifiers": {"wounds": 1}
+            },
+            {
+              "range": [5, 6],
+              "name": "Bayonet Reflexes",
+              "description": "Lightning fast with the blade",
+              "stat_modifiers": {"combat": 1}
+            }
+          ]
+        },
+        {
+          "name": "Root Mutations",
+          "rolls": [
+            {
+              "range": [1, 2],
+              "name": "Carrot Fingers",
+              "description": "Digits fused into orange stumps",
+              "stat_modifiers": {"shooting": -1, "combat": 1}
+            },
+            {
+              "range": [3, 4],
+              "name": "Potato Skin",
+              "description": "Thick, tuber-like hide",
+              "stat_modifiers": {"save": -1}
+            },
+            {
+              "range": [5, 6],
+              "name": "Onion Tears",
+              "description": "Weeps caustic fluid",
+              "stat_modifiers": {"resolve": 1}
+            }
+          ]
+        }
+      ]
+    },
+
+    "RootBeast": {
+      "name": "Root Beast",
+      "description": "Twisted vegetable abominations",
+      "base_stats": {
+        "movement": 6,
+        "shooting": 0,
+        "combat": 6,
+        "resolve": 6,
+        "wounds": 3,
+        "save": 4
+      },
+      "mutation_tables": [
+        {
+          "name": "Beast Form",
+          "rolls": [
+            {
+              "range": [1, 2],
+              "name": "Turnip Head",
+              "description": "Bulbous root-skull",
+              "stat_modifiers": {"wounds": 1, "movement": -1}
+            },
+            {
+              "range": [3, 4],
+              "name": "Thorned Hide",
+              "description": "Spikes pierce attackers",
+              "stat_modifiers": {"save": -1}
+            },
+            {
+              "range": [5, 6],
+              "name": "Radish Speed",
+              "description": "Blurs across the battlefield",
+              "stat_modifiers": {"movement": 2}
+            }
+          ]
+        },
+        {
+          "name": "Feral Instincts",
+          "rolls": [
+            {
+              "range": [1, 2],
+              "name": "Slobbering Maw",
+              "description": "Drooling fangs and hunger",
+              "stat_modifiers": {"combat": 1}
+            },
+            {
+              "range": [3, 4],
+              "name": "Thick Skull",
+              "description": "Too stupid to know fear",
+              "stat_modifiers": {"resolve": 1}
+            },
+            {
+              "range": [5, 6],
+              "name": "Regenerating Roots",
+              "description": "Grows back severed limbs",
+              "stat_modifiers": {"wounds": 1}
+            }
+          ]
+        }
+      ]
+    }
+  },
+
+  "weapons": [
+    {
+      "name": "Rusty Musket",
+      "type": "ranged",
+      "range": 12,
+      "modifier": 0
+    },
+    {
+      "name": "Blunderbuss",
+      "type": "ranged",
+      "range": 6,
+      "modifier": 1
+    },
+    {
+      "name": "Pistol",
+      "type": "ranged",
+      "range": 8,
+      "modifier": 0
+    },
+    {
+      "name": "Bayonet",
+      "type": "melee",
+      "range": 0,
+      "modifier": 0
+    },
+    {
+      "name": "Sabre",
+      "type": "melee",
+      "range": 0,
+      "modifier": 1
+    },
+    {
+      "name": "Trench Club",
+      "type": "melee",
+      "range": 0,
+      "modifier": 0
+    },
+    {
+      "name": "Claws and Teeth",
+      "type": "melee",
+      "range": 0,
+      "modifier": 1
+    }
+  ],
+
+  "composition_rules": {
+    "min_units": 5,
+    "max_units": 10,
+    "required": {
+      "Toff": {"min": 1, "max": 2}
+    },
+    "allowed_weapons": {
+      "Toff": ["Pistol", "Sabre"],
+      "Chuff": ["Rusty Musket", "Blunderbuss", "Bayonet", "Trench Club"],
+      "RootBeast": ["Claws and Teeth"]
+    },
+    "mutations_per_unit": 2
+  }
+}
