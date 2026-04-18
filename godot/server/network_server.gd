@@ -1,8 +1,11 @@
 extends Node
-## ENet server listener — Phase 3.
+## ENet server listener — Phase 3 + 4.
 ## Exposes RPCs for clients to interact with the server.
 
 @onready var room_manager: Node = get_parent().get_node("RoomManager")
+
+# Active game states: room_code -> Types.GameState
+var active_games: Dictionary = {}
 
 
 ## Client RPC: Create a new room
@@ -123,11 +126,15 @@ func _start_game(room) -> void:
 	room.status = "active"
 
 	# Initialize game state
-	var game_state = _initialize_game_state(room)
+	var game_state_dict = _initialize_game_state(room)
+	var game_state = Types.GameState.from_dict(game_state_dict)
+
+	# Store in active games
+	active_games[room.code] = game_state
 
 	# Broadcast to all players
 	for player in room.players:
-		_send_game_started.rpc_id(player["peer_id"], game_state)
+		_send_game_started.rpc_id(player["peer_id"], game_state_dict)
 
 
 ## Server → Client: Room joined successfully
@@ -164,6 +171,146 @@ func _send_army_submitted(peer_id: int, army_size: int) -> void:
 @rpc("authority", "call_remote", "reliable")
 func _send_game_started(game_state: Dictionary) -> void:
 	pass  # Implemented on client
+
+
+## Server → Client: Action resolved (Phase 4)
+@rpc("authority", "call_remote", "reliable")
+func _send_action_resolved(action: Dictionary, result: Dictionary) -> void:
+	pass  # Implemented on client
+
+
+## Server → Client: State update (Phase 4)
+@rpc("authority", "call_remote", "reliable")
+func _send_state_update(state_data: Dictionary) -> void:
+	pass  # Implemented on client
+
+
+## Server → Client: Game ended (Phase 4)
+@rpc("authority", "call_remote", "reliable")
+func _send_game_ended(winner_seat: int, reason: String) -> void:
+	pass  # Implemented on client
+
+
+## Client RPC: Request a game action (Phase 4)
+@rpc("any_peer", "call_remote", "reliable")
+func request_action(action_data: Dictionary) -> void:
+	var peer_id = multiplayer.get_remote_sender_id()
+
+	var room = room_manager.get_room_for_peer(peer_id)
+	if not room:
+		_send_error_to_client(peer_id, "Not in a room")
+		return
+
+	if not active_games.has(room.code):
+		_send_error_to_client(peer_id, "Game not started")
+		return
+
+	var state: Types.GameState = active_games[room.code]
+
+	# Validate requesting player is the active player
+	var player = room.get_player(peer_id)
+	if player.is_empty():
+		_send_error_to_client(peer_id, "Player not found")
+		return
+
+	if player["seat"] != state.active_seat:
+		_send_error_to_client(peer_id, "Not your turn")
+		return
+
+	# Route action to appropriate handler
+	var action_type = action_data.get("type", "")
+	var result: Types.EngineResult = null
+
+	match action_type:
+		"place_unit":
+			result = GameEngine.place_unit(
+				state,
+				action_data.get("unit_id", ""),
+				action_data.get("x", -1),
+				action_data.get("y", -1)
+			)
+
+		"confirm_placement":
+			result = GameEngine.confirm_placement(state)
+
+		"move":
+			result = GameEngine.move_unit(
+				state,
+				action_data.get("unit_id", ""),
+				action_data.get("x", -1),
+				action_data.get("y", -1)
+			)
+
+		"shoot":
+			# Roll dice for shooting
+			var dice = [_roll_d6(), _roll_d6(), _roll_d6()]
+			result = GameEngine.resolve_shoot(
+				state,
+				action_data.get("attacker_id", ""),
+				action_data.get("target_id", ""),
+				dice
+			)
+
+		"charge":
+			# Roll dice for melee
+			var dice = [_roll_d6(), _roll_d6(), _roll_d6()]
+			result = GameEngine.resolve_charge(
+				state,
+				action_data.get("attacker_id", ""),
+				action_data.get("target_id", ""),
+				dice
+			)
+
+		"end_activation":
+			result = GameEngine.end_activation(
+				state,
+				action_data.get("unit_id", "")
+			)
+
+		"end_turn":
+			result = GameEngine.end_turn(state)
+
+		_:
+			_send_error_to_client(peer_id, "Unknown action type: " + action_type)
+			return
+
+	if not result.success:
+		_send_error_to_client(peer_id, result.error)
+		return
+
+	# Update stored state
+	active_games[room.code] = result.new_state
+
+	# Check victory
+	var victory = GameEngine.check_victory(result.new_state)
+	if victory["winner"] != 0:
+		result.new_state.phase = "finished"
+		result.new_state.winner_seat = victory["winner"]
+
+	# Broadcast to all players
+	for p in room.players:
+		_send_action_resolved.rpc_id(
+			p["peer_id"],
+			action_data,
+			result.to_dict()
+		)
+
+		_send_state_update.rpc_id(
+			p["peer_id"],
+			result.new_state.to_dict()
+		)
+
+		if victory["winner"] != 0:
+			_send_game_ended.rpc_id(
+				p["peer_id"],
+				victory["winner"],
+				victory["reason"]
+			)
+
+
+## Helper: Roll a d6
+func _roll_d6() -> int:
+	return randi_range(1, 6)
 
 
 ## Helper to send error to a specific client
