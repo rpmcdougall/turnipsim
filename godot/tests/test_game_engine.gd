@@ -181,7 +181,12 @@ func _test_shooting() -> void:
 	)
 
 	_test("Reject shooting without ranged weapon", func():
-		var state = _mock_orders_state()  # No weapon_range
+		var state = _mock_orders_state()
+		# Force attacker to have no ranged weapon
+		state.units[0].base_stats.weapon_range = 0
+		# Put units close together so range isn't the issue
+		state.units[0].x = 10; state.units[0].y = 10
+		state.units[1].x = 11; state.units[1].y = 10
 		var dice = [6, 1]
 		var result = GameEngine.resolve_shoot(state, state.units[0].id, state.units[1].id, dice)
 
@@ -391,6 +396,9 @@ func _mock_orders_state() -> Types.GameState:
 
 func _mock_orders_state_ranged() -> Types.GameState:
 	var state = _mock_orders_state()
+	# Position units within range of each other (distance 10, range 18)
+	state.units[0].x = 10; state.units[0].y = 15
+	state.units[1].x = 20; state.units[1].y = 15
 	# Give units ranged weapons via weapon_range
 	state.units[0].base_stats.weapon_range = 18
 	state.units[1].base_stats.weapon_range = 18
