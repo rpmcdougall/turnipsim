@@ -263,50 +263,38 @@ func request_action(action_data: Dictionary) -> void:
 		"confirm_placement":
 			result = GameEngine.confirm_placement(state)
 
-		"move":
-			result = GameEngine.move_unit(
+		"select_snob":
+			result = GameEngine.select_snob(
+				state,
+				action_data.get("snob_id", "")
+			)
+
+		"declare_order":
+			var blunder_die = _roll_d6()
+			var move_dice = [_roll_d6(), _roll_d6()]
+			result = GameEngine.declare_order(
 				state,
 				action_data.get("unit_id", ""),
-				action_data.get("x", -1),
-				action_data.get("y", -1)
+				action_data.get("order_type", ""),
+				blunder_die,
+				move_dice
 			)
 
-		"shoot":
-			# Roll enough dice for all attacks (2 per model: inaccuracy + vulnerability)
-			var attacker = _find_unit(state, action_data.get("attacker_id", ""))
-			var num_dice = (attacker.model_count * 2) if attacker else 6
-			var dice: Array = []
-			for i in range(num_dice):
-				dice.append(_roll_d6())
-			result = GameEngine.resolve_shoot(
+		"declare_self_order":
+			var blunder_die = _roll_d6()
+			var move_dice = [_roll_d6(), _roll_d6()]
+			result = GameEngine.declare_self_order(
 				state,
-				action_data.get("attacker_id", ""),
-				action_data.get("target_id", ""),
-				dice
+				action_data.get("unit_id", ""),
+				action_data.get("order_type", ""),
+				blunder_die,
+				move_dice
 			)
 
-		"charge":
-			# Roll enough dice for all melee attacks (2 per attack: inaccuracy + vulnerability)
-			var attacker = _find_unit(state, action_data.get("attacker_id", ""))
-			var num_dice = (attacker.model_count * attacker.base_stats.attacks * 2) if attacker else 6
-			var dice: Array = []
-			for i in range(num_dice):
-				dice.append(_roll_d6())
-			result = GameEngine.resolve_charge(
-				state,
-				action_data.get("attacker_id", ""),
-				action_data.get("target_id", ""),
-				dice
-			)
-
-		"end_activation":
-			result = GameEngine.end_activation(
-				state,
-				action_data.get("unit_id", "")
-			)
-
-		"end_turn":
-			result = GameEngine.end_turn(state)
+		"execute_order":
+			var params = action_data.get("params", {})
+			var dice = _roll_execute_dice(state)
+			result = GameEngine.execute_order(state, params, dice)
 
 		_:
 			_send_error_to_client(peer_id, "Unknown action type: " + action_type)
@@ -357,6 +345,31 @@ func _find_unit(state: Types.GameState, unit_id: String) -> Types.UnitState:
 ## Helper: Roll a d6
 func _roll_d6() -> int:
 	return randi_range(1, 6)
+
+
+## Helper: Roll the combat dice pool an execute_order requires, sized to the
+## ordered unit and the declared order type. Rolls extras when the target
+## isn't yet known (move_and_shoot may or may not fire after moving).
+func _roll_execute_dice(state: Types.GameState) -> Array:
+	var unit = _find_unit(state, state.current_order_unit_id)
+	if unit == null:
+		return []
+
+	var num_dice = 0
+	match state.current_order_type:
+		"volley_fire":
+			num_dice = unit.model_count * 2
+		"move_and_shoot":
+			num_dice = unit.model_count * 2
+		"charge":
+			num_dice = unit.model_count * unit.base_stats.attacks * 2
+		"march":
+			num_dice = 0
+
+	var dice: Array = []
+	for i in range(num_dice):
+		dice.append(_roll_d6())
+	return dice
 
 
 ## Helper to send error to a specific client
