@@ -35,23 +35,51 @@ Explicitly out of scope — do not build these:
 - Mac/Linux code signing (friends will dismiss the warning)
 - Animations beyond tween-based move/attack feedback
 - Sound effects or music
-- Custom army lists (MVP is random roll only)
+- Cult-specific units and mechanics (core units only for now)
 - Terrain beyond simple impassable tiles
 - Morale, panic, retreat, or any rules beyond move/shoot/melee
 
 ## Turnip 28 domain notes
 
-Turnip 28 is a skirmish wargame in the Trench Crusade / grimdark mud aesthetic. Ship **our own simplified ruleset** inspired by it — do not reproduce published stat blocks verbatim.
+Turnip 28 is a skirmish wargame in the grimdark root-vegetable apocalypse aesthetic. The simulator uses the **official v17 Core Rules** as its data source.
 
-For the MVP:
-- Units have stats: Movement, Shooting, Combat, Resolve, Wounds, Save
-- Armies are ~5–10 models rolled from random tables (Toff leader, Chuff retinue, Root mutations)
-- 3 unit archetypes (Toff, Chuff, Root Beast) defined in data
-- 2–3 random mutation tables per archetype
-- One weapon per unit (melee OR ranged) chosen at roll time
-- Turn structure: alternating activations, each activation = move + one action (shoot OR charge)
-- Measurements: grid-based, 1 cell = 1 inch equivalent, recommend 48×32 cell board
-- Dice: simple d6 to-hit, to-wound, save rolls
+### Stats (Turnip28 v17 Characteristics)
+- **M** (Movement): max distance in inches
+- **A** (Attacks): number of melee dice per model
+- **I** (Inaccuracy): minimum D6 result to hit (lower = better, same for shooting + melee)
+- **W** (Wounds): damage capacity per model
+- **V** (Vulnerability): minimum D6 result to save (lower = better)
+
+### Core Unit Types
+- **Snobs**: Toff (1 model, cmd range 6"), Toady (1 model, cmd range 3")
+- **Infantry**: Fodder (12), Chaff (4), Brutes (6)
+- **Cavalry**: Whelps (4), Bastards (3)
+- **Artillery**: Stump Gun (1)
+
+### Equipment Types
+- **Black Powder** (ranged): generates powder smoke token, can't shoot again until next round
+- **Missile** (ranged): target's V reduced by 2
+- **Close Combat** (melee): -1 I for melee, may re-roll charge distance
+- **Pistols and Sabres** (Snob only): no powder smoke, not close combat
+
+### Army Building (Snobs + Followers)
+- 1 Toff (brings 2 Follower units) + N Toadies (each brings 1 Follower unit)
+- Standard game: 3 Snobs (1 Toff + 2 Toadies) = 4 Follower units
+- Followers chosen from core unit types or Cult-specific units
+- All models in a unit share the same equipment
+
+### Turn Structure
+- Played in rounds (usually 4), initiative set once at start
+- Each round: alternate ordering Snobs → Snobs order Followers in command range
+- Orders: Volley Fire, Move and Shoot, March, Charge
+- Blunder check on D6 (roll 1 = blunder + panic token)
+- Combat: Inaccuracy roll to hit → Vulnerability roll to save → wounds
+
+### Army Submission
+- Players build a roster selecting Snobs, Followers, and equipment within rules constraints
+- Roster format: `{ cult, snobs: [{ snob_type, equipment, followers: [{ unit_type, equipment }] }] }`
+- Presets available for quick start (sourced from community lists)
+- Server validates roster against ruleset composition rules before accepting
 
 ## Project structure
 
@@ -68,11 +96,10 @@ godot/
 │   └── network_manager.gd  # Mode detection singleton (is_server flag)
 │
 ├── game/                   # Pure logic — NO node/scene dependencies
-│   ├── types.gd            # Unit, Stats, Weapon, Mutation (RefCounted)
-│   ├── ruleset.gd          # Loads + validates JSON rulesets
-│   ├── army_roller.gd      # roll_army(ruleset, roll_d6: Callable)
+│   ├── types.gd            # Stats, UnitDef, Roster, UnitState, GameState (RefCounted)
+│   ├── ruleset.gd          # Loads + validates v17 JSON rulesets
 │   └── rulesets/           # One JSON file per ruleset
-│       └── mvp.json
+│       └── v17.json        # Turnip28 v17 core rules data
 │
 ├── server/                 # Server-only
 │   ├── server_main.gd
@@ -92,7 +119,7 @@ godot/
 **Key contracts:**
 
 - **`game/` is no-node.** Everything in `game/` must be pure RefCounted — no `Node`, no `get_tree()`, no scene tree, no signals. Safe to use from server, client, or headless tests.
-- **Data-driven rulesets.** Archetypes, mutation tables, weapons, and composition rules live in JSON files under `game/rulesets/`, not in GDScript. The engine is singular; the data varies.
+- **Data-driven rulesets.** Unit types, equipment, special rules, and composition constraints live in JSON files under `game/rulesets/`, not in GDScript. The engine is singular; the data varies.
 - **Dependency injection for dice.** Game logic that needs randomness takes a `roll_d6: Callable` argument. This makes tests deterministic and keeps the server as the sole authority for real dice rolls.
 - **Single project, runtime split.** Don't duplicate code across two Godot projects. `NetworkManager.is_server` picks the entry path; the `game/` folder is literally shared because it's literally one folder.
 
@@ -103,7 +130,7 @@ godot/
 - Authentication: none for MVP. Players enter a display name. Server assigns peer IDs.
 - Room model: server holds a dictionary of `room_code -> RoomState`. Room codes are 6-char uppercase (exclude I/O/0/1).
 - RPCs:
-  - Client → Server: `create_room()`, `join_room(code)`, `set_ready(bool)`, `submit_army(army_data)`, `request_action(action_type, payload)`
+  - Client → Server: `create_room()`, `join_room(code)`, `set_ready(bool)`, `submit_roster(roster_data)`, `request_action(action_type, payload)`
   - Server → Clients: `room_joined(room_state)`, `peer_joined(player)`, `game_started(initial_state)`, `state_update(units_delta)`, `action_resolved(action, dice, result)`, `game_ended(winner)`
 - All RPCs are `@rpc("any_peer", "call_remote", "reliable")` unless specifically noted
 - Server validates every action. Clients never trust each other, and never mutate shared state directly.
@@ -132,17 +159,21 @@ class PlayerState:
 class UnitState:
     var id: String  # uuid
     var owner_seat: int
-    var name: String
-    var archetype: String
-    var stats: Dictionary
-    var mutations: Array[String]
-    var weapon: Dictionary
-    var max_wounds: int
+    var unit_type: String      # "Fodder", "Toff", etc.
+    var category: String       # "snob", "infantry", "cavalry", "artillery"
+    var model_count: int       # Current living models
+    var max_models: int        # Starting model count
+    var base_stats: Stats      # M/A/I/W/V + weapon_range
+    var equipment: String      # Equipment type key
+    var special_rules: Array[String]
+    var panic_tokens: int      # 0-6
+    var has_powder_smoke: bool
     var current_wounds: int
     var x: int
     var y: int
     var has_activated: bool
     var is_dead: bool
+    var snob_id: String        # Commanding Snob's ID
 ```
 
 ## Build order (strictly sequential — don't skip ahead)
@@ -155,21 +186,14 @@ Phase numbering matches `CLAUDE.md`. Phase 0 is already complete.
 3. `entry.tscn` branches to server or client main scene
 4. Folder layout established; empty server + client + game + tests dirs
 
-### Phase 1: Game data (types, ruleset JSON, army roller)
-1. Define RefCounted data classes in `game/types.gd`: `Stats`, `Weapon`, `Mutation`, `Unit`
-2. Author the first ruleset at `game/rulesets/mvp.json`: 3 archetypes, 2–3 mutation tables each, weapon pool, composition rules
-3. Implement `game/ruleset.gd` — loads and validates a ruleset JSON; fails fast on malformed data
-4. Implement `game/army_roller.gd` with `roll_army(ruleset, roll_d6: Callable) -> Array[Unit]`
-5. Headless tests in `tests/`: deterministic dice sequence → identical army; composition rules respected; loader error paths
+### Phase 1: Game data (types, ruleset JSON) ← REWORKED
+1. Define RefCounted data classes in `game/types.gd`: `Stats` (M/A/I/W/V), `Equipment`, `UnitDef`, `Roster`, `RosterSnob`, `RosterUnit`, `UnitState`, `GameState`
+2. Author the v17 ruleset at `game/rulesets/v17.json`: all core unit types with real stats, equipment types, special rules, army composition constraints
+3. Implement `game/ruleset.gd` — loads and validates v17 JSON; validates rosters against composition rules
 
-Checkpoint: `godot --headless` runs tests green. Same dice sequence produces the same army.
+Checkpoint: `godot --headless` runs tests green. Ruleset loads, roster validation works.
 
-### Phase 2: Army rolling UI (client-side, no networking)
-1. Build a `TestRoll.tscn` under `client/scenes/` that rolls an army and displays it as labels
-2. Wire the Main Menu → TestRoll flow locally (no server involved)
-3. Add a re-roll button
-
-Checkpoint: I can run the client, click a button, see a random army, and re-roll.
+### Phase 2: REMOVED (was: Army rolling UI — replaced by Phase 5b Army Submission)
 
 ### Phase 3: ENet networking, lobby, room management
 1. `server/server_main.gd`: boot ENet server on port 9999, log connections/disconnections
@@ -180,9 +204,10 @@ Checkpoint: I can run the client, click a button, see a random army, and re-roll
 
 Checkpoint: Two clients on my laptop connect to the local server, share a room code, see each other's names.
 
-Phase 3b — Army submission (fold into Phase 3 if small):
-- Each client rolls locally via Phase 1 code, submits via `submit_army`
-- Server stores armies in `RoomState.players[].army`
+Phase 3b — Roster submission (fold into Phase 3 if small):
+- Each client selects a preset roster or builds one via Phase 5b UI, submits via `submit_roster`
+- Server validates roster against ruleset composition rules
+- Server stores rosters in `RoomState.players[].roster`
 - `set_ready(bool)` — when both ready, server broadcasts `game_started`
 
 ### Phase 4: Battle gameplay (server-authoritative)
@@ -201,12 +226,17 @@ Phase 3b — Army submission (fold into Phase 3 if small):
 
 Checkpoint: Two clients on my laptop play a full networked game against the local server. State stays consistent.
 
-### Phase 5: Polish, multiple rulesets
+### Phase 5: Polish
 1. Win condition check at end of each activation; Victory/Defeat screen
 2. "New game" button returns both players to lobby
 3. Visual polish: placeholder sprites, health bars, movement range highlight, attack target highlight
 4. Peer disconnect handling: opposing peer drops → "Opponent disconnected — you win" → menu
-5. Prove the data-driven ruleset story by adding a second JSON ruleset and swapping between them in the lobby
+
+### Phase 5b: Army Submission UI
+1. Roster builder screen — pick Snobs, assign Followers, choose equipment within ruleset constraints
+2. Preset rosters: hardcoded community-sourced army lists for quick start
+3. Roster validation feedback in UI (highlight invalid picks, show composition errors)
+4. Replace the old test_roll screen; wire into lobby flow (build roster → submit → ready up)
 
 ### Phase 6: Export presets, deployment
 1. Export presets for Windows, Mac, Linux clients (created via editor UI, **not** committed to git)
@@ -218,6 +248,15 @@ Checkpoint: Two clients on my laptop play a full networked game against the loca
 7. Put client binaries on a GitHub release
 
 Checkpoint: Two clients on two different machines, connecting over the internet, play a full game.
+
+### Phase 7: Cult mechanics
+1. Extend `v17.json` with cult-specific data: unique unit types, cult special rules, army composition overrides
+2. Add cult selection to roster builder (Phase 5b UI) — selecting a cult unlocks cult units and applies army mod constraints
+3. Implement cult special rules in `game_engine.gd` — data-driven where possible, code hooks where necessary
+4. Start with 2–3 simpler cults (Toadpole tier: Harry's Recruits, Slug's Lament, Fungivorous Herd) and expand
+5. Tests for cult-specific composition validation and combat interactions
+
+Checkpoint: Two players can pick different cults and play a game using cult-specific units and abilities.
 
 ## Things to get right early (cheap now, expensive later)
 
@@ -237,7 +276,7 @@ Checkpoint: Two clients on two different machines, connecting over the internet,
 - Don't add a database in Phase 6. In-memory rooms are fine. Persistence is post-MVP.
 - Don't build a server browser UI. Direct-connect by IP is the whole interface.
 - Don't generalize the weapon/stat/mutation system until a second ruleset demands it. (Phase 5 is where that pressure shows up — not before.)
-- Don't try to match official Turnip 28 balance. Ship the loop first.
+- Don't implement Cult-specific mechanics until after core gameplay loop ships.
 - Don't bother with Mac/Windows code signing for MVP. Friends will click through warnings.
 - Don't use Godot's `MultiplayerSynchronizer`/`MultiplayerSpawner` nodes. They're designed for real-time games with replicated transforms. For a turn-based authoritative model, plain RPCs are simpler and clearer.
 - Don't commit export presets. They're editor-generated per-machine (Phase 6).

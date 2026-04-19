@@ -21,9 +21,9 @@ func create_room(display_name: String) -> void:
 		_send_error_to_client(peer_id, "Failed to create room")
 		return
 
-	# Send room state back to creator
+	# Send room state back to creator via NetworkClient
 	var room = room_manager.get_room_for_peer(peer_id)
-	_send_room_joined.rpc_id(peer_id, room.to_dict())
+	NetworkClient._send_room_joined.rpc_id(peer_id, room.to_dict())
 
 
 ## Client RPC: Join an existing room
@@ -38,15 +38,15 @@ func join_room(code: String, display_name: String) -> void:
 		_send_error_to_client(peer_id, "Failed to join room " + code)
 		return
 
-	# Get room state and send to new player
+	# Get room state and send to new player via NetworkClient
 	var room = room_manager.get_room_for_peer(peer_id)
-	_send_room_joined.rpc_id(peer_id, room.to_dict())
+	NetworkClient._send_room_joined.rpc_id(peer_id, room.to_dict())
 
 	# Notify all other players in the room
 	var new_player = room.get_player(peer_id)
 	for player in room.players:
 		if player["peer_id"] != peer_id:
-			_send_peer_joined.rpc_id(player["peer_id"], new_player)
+			NetworkClient._send_peer_joined.rpc_id(player["peer_id"], new_player)
 
 
 ## Client RPC: Set ready status
@@ -61,11 +61,11 @@ func set_ready(ready: bool) -> void:
 		_send_error_to_client(peer_id, "Failed to set ready status")
 		return
 
-	# Broadcast ready status to all players in the room
+	# Broadcast ready status to all players in the room via NetworkClient
 	var room = room_manager.get_room_for_peer(peer_id)
 	if room:
 		for player in room.players:
-			_send_player_ready_changed.rpc_id(player["peer_id"], peer_id, ready)
+			NetworkClient._send_player_ready_changed.rpc_id(player["peer_id"], peer_id, ready)
 
 		# Check if all players are ready
 		if room.is_full() and room_manager.are_all_players_ready(room):
@@ -73,33 +73,42 @@ func set_ready(ready: bool) -> void:
 			# Phase 3b will handle game_started broadcast
 
 
-## Client RPC: Submit army (Phase 3b)
+## Client RPC: Submit roster (Phase 3b — replaces old submit_army)
 @rpc("any_peer", "call_remote", "reliable")
-func submit_army(army_data: Array) -> void:
+func submit_army(roster_data: Dictionary) -> void:
 	var peer_id = multiplayer.get_remote_sender_id()
-	print("[NetworkServer] Peer %d submitting army (%d units)" % [peer_id, army_data.size()])
+	print("[NetworkServer] Peer %d submitting roster" % peer_id)
 
 	var room = room_manager.get_room_for_peer(peer_id)
 	if not room:
 		_send_error_to_client(peer_id, "Not in a room")
 		return
 
-	# Validate army size
-	if army_data.size() < 5 or army_data.size() > 10:
-		_send_error_to_client(peer_id, "Invalid army size (must be 5-10 units)")
+	# Parse and validate roster
+	var roster = Types.Roster.from_dict(roster_data)
+	var ruleset = Ruleset.new()
+	var load_error = ruleset.load_from_file("res://game/rulesets/v17.json")
+	if load_error:
+		_send_error_to_client(peer_id, "Server failed to load ruleset")
 		return
 
-	# Store army in room state
+	var validation_error = ruleset.validate_roster(roster)
+	if validation_error:
+		_send_error_to_client(peer_id, "Invalid roster: " + validation_error)
+		return
+
+	# Store roster in room state
 	var player = room.get_player(peer_id)
 	if player.is_empty():
 		_send_error_to_client(peer_id, "Player not found in room")
 		return
 
-	player["army"] = army_data
+	player["army"] = roster_data  # Store as dict for serialization
 
-	# Broadcast to all players in room
+	# Broadcast to all players in room via NetworkClient
+	var unit_count = roster.get_unit_count()
 	for p in room.players:
-		_send_army_submitted.rpc_id(p["peer_id"], peer_id, army_data.size())
+		NetworkClient._send_army_submitted.rpc_id(p["peer_id"], peer_id, unit_count)
 
 	# Check if both armies are submitted
 	if _are_both_armies_submitted(room):
@@ -118,6 +127,27 @@ func _are_both_armies_submitted(room) -> bool:
 	return true
 
 
+## Client RPC: Start game in solo testing mode (bypass 2-player requirement)
+@rpc("any_peer", "call_remote", "reliable")
+func start_solo_test() -> void:
+	var peer_id = multiplayer.get_remote_sender_id()
+	print("[NetworkServer] Peer %d requesting solo test start" % peer_id)
+
+	var room = room_manager.get_room_for_peer(peer_id)
+	if not room:
+		_send_error_to_client(peer_id, "Not in a room")
+		return
+
+	# Verify player has submitted an army
+	var player = room.get_player(peer_id)
+	if player.is_empty() or (typeof(player["army"]) == TYPE_DICTIONARY and player["army"].is_empty()) or (typeof(player["army"]) == TYPE_ARRAY and player["army"].is_empty()):
+		_send_error_to_client(peer_id, "Must submit roster before starting solo test")
+		return
+
+	print("[NetworkServer] Starting solo test mode for room %s (1 player)" % room.code)
+	_start_game(room)
+
+
 ## Helper: Start the game (Phase 3b)
 func _start_game(room) -> void:
 	print("[NetworkServer] Starting game for room %s" % room.code)
@@ -132,9 +162,9 @@ func _start_game(room) -> void:
 	# Store in active games
 	active_games[room.code] = game_state
 
-	# Broadcast to all players
+	# Broadcast to all players via NetworkClient
 	for player in room.players:
-		_send_game_started.rpc_id(player["peer_id"], game_state_dict)
+		NetworkClient._send_game_started.rpc_id(player["peer_id"], game_state_dict)
 
 
 ## Server → Client: Room joined successfully
@@ -242,8 +272,12 @@ func request_action(action_data: Dictionary) -> void:
 			)
 
 		"shoot":
-			# Roll dice for shooting
-			var dice = [_roll_d6(), _roll_d6(), _roll_d6()]
+			# Roll enough dice for all attacks (2 per model: inaccuracy + vulnerability)
+			var attacker = _find_unit(state, action_data.get("attacker_id", ""))
+			var num_dice = (attacker.model_count * 2) if attacker else 6
+			var dice: Array = []
+			for i in range(num_dice):
+				dice.append(_roll_d6())
 			result = GameEngine.resolve_shoot(
 				state,
 				action_data.get("attacker_id", ""),
@@ -252,8 +286,12 @@ func request_action(action_data: Dictionary) -> void:
 			)
 
 		"charge":
-			# Roll dice for melee
-			var dice = [_roll_d6(), _roll_d6(), _roll_d6()]
+			# Roll enough dice for all melee attacks (2 per attack: inaccuracy + vulnerability)
+			var attacker = _find_unit(state, action_data.get("attacker_id", ""))
+			var num_dice = (attacker.model_count * attacker.base_stats.attacks * 2) if attacker else 6
+			var dice: Array = []
+			for i in range(num_dice):
+				dice.append(_roll_d6())
 			result = GameEngine.resolve_charge(
 				state,
 				action_data.get("attacker_id", ""),
@@ -287,25 +325,33 @@ func request_action(action_data: Dictionary) -> void:
 		result.new_state.phase = "finished"
 		result.new_state.winner_seat = victory["winner"]
 
-	# Broadcast to all players
+	# Broadcast to all players via NetworkClient
 	for p in room.players:
-		_send_action_resolved.rpc_id(
+		NetworkClient._send_action_resolved.rpc_id(
 			p["peer_id"],
 			action_data,
 			result.to_dict()
 		)
 
-		_send_state_update.rpc_id(
+		NetworkClient._send_state_update.rpc_id(
 			p["peer_id"],
 			result.new_state.to_dict()
 		)
 
 		if victory["winner"] != 0:
-			_send_game_ended.rpc_id(
+			NetworkClient._send_game_ended.rpc_id(
 				p["peer_id"],
 				victory["winner"],
 				victory["reason"]
 			)
+
+
+## Helper: Find a unit by ID in a game state
+func _find_unit(state: Types.GameState, unit_id: String) -> Types.UnitState:
+	for u in state.units:
+		if u.id == unit_id:
+			return u
+	return null
 
 
 ## Helper: Roll a d6
@@ -316,41 +362,107 @@ func _roll_d6() -> int:
 ## Helper to send error to a specific client
 func _send_error_to_client(peer_id: int, message: String) -> void:
 	print("[NetworkServer] Sending error to peer %d: %s" % [peer_id, message])
-	_send_error.rpc_id(peer_id, message)
+	NetworkClient._send_error.rpc_id(peer_id, message)
 
 
 ## Helper: Initialize game state from room data (Phase 3b)
+## Expands rosters into UnitState structures.
 func _initialize_game_state(room) -> Dictionary:
 	var units: Array = []
 	var unit_id_counter: int = 0
 
-	# Convert armies to UnitState structures
+	# Load ruleset for unit definitions
+	var ruleset = Ruleset.new()
+	ruleset.load_from_file("res://game/rulesets/v17.json")
+
+	# Roll initiative — seat 1 or 2
+	var initiative_seat = 1 if _roll_d6() <= 3 else 2
+
+	# Expand each player's roster into UnitStates
 	for player in room.players:
-		for unit_dict in player["army"]:
-			# Create UnitState data
-			var unit_state = {
-				"id": "unit_%d" % unit_id_counter,
+		var roster_data = player["army"]
+		if roster_data.is_empty():
+			continue
+
+		var roster = Types.Roster.from_dict(roster_data)
+
+		for snob in roster.snobs:
+			# Create Snob UnitState
+			var snob_id = "unit_%d" % unit_id_counter
+			unit_id_counter += 1
+
+			var snob_def = ruleset.get_unit_type(snob.snob_type)
+			if snob_def.is_empty():
+				continue
+
+			var snob_stats = snob_def["base_stats"]
+			var snob_rules: Array = []
+			if snob_def.has("special_rules"):
+				for r in snob_def["special_rules"]:
+					snob_rules.append(str(r))
+
+			units.append({
+				"id": snob_id,
 				"owner_seat": player["seat"],
-				"name": unit_dict["name"],
-				"archetype": unit_dict["archetype"],
-				"base_stats": unit_dict["base_stats"],
-				"weapon": unit_dict["weapon"],
-				"mutations": unit_dict.get("mutations", []),
-				"max_wounds": unit_dict["base_stats"]["wounds"],  # Will be adjusted by mutations later
-				"current_wounds": unit_dict["base_stats"]["wounds"],
-				"x": -1,  # Not placed yet
+				"unit_type": snob.snob_type,
+				"category": "snob",
+				"model_count": 1,
+				"max_models": 1,
+				"base_stats": snob_stats,
+				"equipment": snob.equipment,
+				"special_rules": snob_rules,
+				"panic_tokens": 0,
+				"has_powder_smoke": false,
+				"current_wounds": 0,
+				"x": -1,
 				"y": -1,
 				"has_activated": false,
-				"is_dead": false
-			}
-			units.append(unit_state)
-			unit_id_counter += 1
+				"is_dead": false,
+				"snob_id": ""
+			})
+
+			# Create Follower UnitStates
+			for follower in snob.followers:
+				var f_id = "unit_%d" % unit_id_counter
+				unit_id_counter += 1
+
+				var f_def = ruleset.get_unit_type(follower.unit_type)
+				if f_def.is_empty():
+					continue
+
+				var f_stats = f_def["base_stats"]
+				var f_rules: Array = []
+				if f_def.has("special_rules"):
+					for r in f_def["special_rules"]:
+						f_rules.append(str(r))
+
+				units.append({
+					"id": f_id,
+					"owner_seat": player["seat"],
+					"unit_type": follower.unit_type,
+					"category": f_def.get("category", "infantry"),
+					"model_count": f_def.get("model_count", 1),
+					"max_models": f_def.get("model_count", 1),
+					"base_stats": f_stats,
+					"equipment": follower.equipment,
+					"special_rules": f_rules,
+					"panic_tokens": 0,
+					"has_powder_smoke": false,
+					"current_wounds": 0,
+					"x": -1,
+					"y": -1,
+					"has_activated": false,
+					"is_dead": false,
+					"snob_id": snob_id
+				})
 
 	return {
 		"room_code": room.code,
-		"phase": "placement",  # Start with placement phase
-		"current_turn": 1,
-		"active_seat": 1,  # Seat 1 starts
+		"phase": "placement",
+		"current_round": 1,
+		"max_rounds": 4,
+		"active_seat": initiative_seat,
+		"initiative_seat": initiative_seat,
 		"units": units,
 		"action_log": [],
 		"winner_seat": 0

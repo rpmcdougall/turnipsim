@@ -1,100 +1,110 @@
 extends Control
-## Test scene for rolling and displaying armies (Phase 2).
+## Test scene for previewing roster presets (replaces old army roller).
 
 @onready var army_display: VBoxContainer = $MarginContainer/VBoxContainer/ScrollContainer/ArmyDisplay
 
 var ruleset: Ruleset = null
+var presets: Array = []
+var current_preset_index: int = 0
 
 
 func _ready() -> void:
-	# Load the MVP ruleset
 	ruleset = Ruleset.new()
-	var error = ruleset.load_from_file("res://game/rulesets/mvp.json")
+	var error = ruleset.load_from_file("res://game/rulesets/v17.json")
 	if error:
 		push_error("TestRoll: Failed to load ruleset: " + error)
 		return
 
-	# Roll the first army
-	_roll_army()
+	# Load presets from JSON
+	presets = _get_presets()
+	if presets.is_empty():
+		push_error("TestRoll: No presets found")
+		return
+
+	_display_preset(0)
 
 
-func _roll_army() -> void:
-	# Clear previous display
+func _get_presets() -> Array:
+	var file = FileAccess.open("res://game/rulesets/v17.json", FileAccess.READ)
+	if not file:
+		return []
+	var json = JSON.new()
+	if json.parse(file.get_as_text()) != OK:
+		return []
+	var data = json.get_data()
+	if typeof(data) != TYPE_DICTIONARY or not data.has("presets"):
+		return []
+	return data["presets"]
+
+
+func _display_preset(index: int) -> void:
+	current_preset_index = index
 	for child in army_display.get_children():
 		child.queue_free()
 
-	# Roll a new army using real RNG
-	var roller = ArmyRoller.new()
-	var army = roller.roll_army(ruleset, func(): return randi_range(1, 6))
+	var preset = presets[index]
+	var roster = Types.Roster.from_dict(preset["roster"])
 
-	# Display army info
+	# Header
 	var header = Label.new()
-	header.text = "Army: %d units" % army.size()
+	header.text = "%s — %s" % [preset["name"], preset.get("description", "")]
 	header.add_theme_font_size_override("font_size", 18)
 	army_display.add_child(header)
 
-	# Display each unit
-	for i in range(army.size()):
-		var unit = army[i]
-		var unit_panel = _create_unit_panel(i + 1, unit)
-		army_display.add_child(unit_panel)
+	var count_label = Label.new()
+	count_label.text = "Units: %d (Preset %d/%d)" % [roster.get_unit_count(), index + 1, presets.size()]
+	army_display.add_child(count_label)
+
+	# Display each snob and their followers
+	var unit_num = 0
+	for snob in roster.snobs:
+		unit_num += 1
+		var snob_panel = _create_unit_panel(unit_num, snob.snob_type, snob.equipment, true)
+		army_display.add_child(snob_panel)
+
+		for follower in snob.followers:
+			unit_num += 1
+			var f_panel = _create_unit_panel(unit_num, follower.unit_type, follower.equipment, false)
+			army_display.add_child(f_panel)
 
 
-func _create_unit_panel(number: int, unit: Types.Unit) -> PanelContainer:
+func _create_unit_panel(number: int, unit_type: String, equipment: String, is_snob: bool) -> PanelContainer:
 	var panel = PanelContainer.new()
 	var vbox = VBoxContainer.new()
 	panel.add_child(vbox)
 
-	# Unit name and archetype
+	var prefix = "" if is_snob else "  "
 	var name_label = Label.new()
-	name_label.text = "[%d] %s (%s)" % [number, unit.name, unit.archetype]
+	name_label.text = "%s[%d] %s" % [prefix, number, unit_type]
 	name_label.add_theme_font_size_override("font_size", 16)
 	vbox.add_child(name_label)
 
-	# Stats
-	var effective = unit.get_effective_stats()
-	var stats_label = Label.new()
-	stats_label.text = "Stats: M%d S%d C%d R%d W%d Sv%d+" % [
-		effective.movement,
-		effective.shooting,
-		effective.combat,
-		effective.resolve,
-		effective.wounds,
-		effective.save
-	]
-	vbox.add_child(stats_label)
-
-	# Weapon
-	var weapon_label = Label.new()
-	weapon_label.text = "Weapon: %s (%s)" % [unit.weapon.name, unit.weapon.type]
-	vbox.add_child(weapon_label)
-
-	# Mutations
-	if unit.mutations.size() > 0:
-		var mutations_label = Label.new()
-		mutations_label.text = "Mutations:"
-		vbox.add_child(mutations_label)
-
-		for mutation in unit.mutations:
-			var mut_label = Label.new()
-			var mod_strings: Array[String] = []
-			for stat_name in mutation.stat_modifiers:
-				var mod_value = mutation.stat_modifiers[stat_name]
-				var sign = "+" if mod_value >= 0 else ""
-				mod_strings.append("%s %s%d" % [stat_name.capitalize(), sign, mod_value])
-
-			mut_label.text = "  • %s — %s (%s)" % [
-				mutation.name,
-				mutation.description,
-				", ".join(mod_strings)
+	if ruleset:
+		var unit_def = ruleset.get_unit_type(unit_type)
+		if not unit_def.is_empty():
+			var stats = unit_def["base_stats"]
+			var stats_label = Label.new()
+			stats_label.text = "%sM%d A%d I%d+ W%d V%d+ | %s | %d models" % [
+				prefix, stats["movement"], stats["attacks"], stats["inaccuracy"],
+				stats["wounds"], stats["vulnerability"], equipment,
+				unit_def["model_count"]
 			]
-			vbox.add_child(mut_label)
+			vbox.add_child(stats_label)
+
+			# Show special rules
+			if unit_def.has("special_rules") and not unit_def["special_rules"].is_empty():
+				var rules_label = Label.new()
+				rules_label.text = "%sRules: %s" % [prefix, ", ".join(unit_def["special_rules"])]
+				vbox.add_child(rules_label)
 
 	return panel
 
 
 func _on_reroll_button_pressed() -> void:
-	_roll_army()
+	if presets.is_empty():
+		return
+	current_preset_index = (current_preset_index + 1) % presets.size()
+	_display_preset(current_preset_index)
 
 
 func _on_back_button_pressed() -> void:
