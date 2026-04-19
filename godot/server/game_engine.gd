@@ -124,6 +124,7 @@ static func confirm_placement(state: Types.GameState) -> Types.EngineResult:
 
 	if other_player_done:
 		new_state.phase = "orders"
+		new_state.order_phase = "snob_select"
 		new_state.active_seat = new_state.initiative_seat
 		new_state.action_log.append({
 			"round": state.current_round,
@@ -171,7 +172,7 @@ static func move_unit(state: Types.GameState, unit_id: String, x: int, y: int) -
 		result.error = "Not your unit"
 		return result
 
-	if unit.has_activated:
+	if unit.has_ordered:
 		result.error = "Unit already activated this round"
 		return result
 
@@ -250,7 +251,7 @@ static func resolve_shoot(state: Types.GameState, attacker_id: String, target_id
 	if attacker.owner_seat != state.active_seat:
 		result.error = "Not your unit"
 		return result
-	if attacker.has_activated:
+	if attacker.has_ordered:
 		result.error = "Unit already activated"
 		return result
 	if attacker.is_dead or target.is_dead:
@@ -326,7 +327,7 @@ static func resolve_shoot(state: Types.GameState, attacker_id: String, target_id
 		if u.id == target_id:
 			new_target = u
 
-	new_attacker.has_activated = true
+	new_attacker.has_ordered = true
 
 	# Black powder generates powder smoke
 	if attacker.equipment == "black_powder":
@@ -395,7 +396,7 @@ static func resolve_charge(state: Types.GameState, attacker_id: String, target_i
 	if attacker.owner_seat != state.active_seat:
 		result.error = "Not your unit"
 		return result
-	if attacker.has_activated:
+	if attacker.has_ordered:
 		result.error = "Unit already activated"
 		return result
 	if attacker.is_dead or target.is_dead:
@@ -453,7 +454,7 @@ static func resolve_charge(state: Types.GameState, attacker_id: String, target_i
 		if u.id == target_id:
 			new_target = u
 
-	new_attacker.has_activated = true
+	new_attacker.has_ordered = true
 	_apply_wounds(new_target, unsaved_wounds)
 
 	new_state.action_log.append({
@@ -506,7 +507,7 @@ static func end_activation(state: Types.GameState, unit_id: String) -> Types.Eng
 	if unit.owner_seat != state.active_seat:
 		result.error = "Not your unit"
 		return result
-	if unit.has_activated:
+	if unit.has_ordered:
 		result.error = "Unit already activated"
 		return result
 
@@ -514,7 +515,7 @@ static func end_activation(state: Types.GameState, unit_id: String) -> Types.Eng
 
 	for u in new_state.units:
 		if u.id == unit_id:
-			u.has_activated = true
+			u.has_ordered = true
 			break
 
 	new_state.action_log.append({
@@ -541,7 +542,7 @@ static func end_turn(state: Types.GameState) -> Types.EngineResult:
 		return result
 
 	for unit in state.units:
-		if unit.owner_seat == state.active_seat and not unit.is_dead and not unit.has_activated:
+		if unit.owner_seat == state.active_seat and not unit.is_dead and not unit.has_ordered:
 			result.error = "You have unactivated units"
 			return result
 
@@ -553,7 +554,7 @@ static func end_turn(state: Types.GameState) -> Types.EngineResult:
 	# Reset activation and powder smoke for the new active player
 	for unit in new_state.units:
 		if unit.owner_seat == other_seat:
-			unit.has_activated = false
+			unit.has_ordered = false
 
 	# If both players have gone, advance to next round
 	if other_seat == new_state.initiative_seat:

@@ -416,7 +416,7 @@ func _initialize_game_state(room) -> Dictionary:
 				"current_wounds": 0,
 				"x": -1,
 				"y": -1,
-				"has_activated": false,
+				"has_ordered": false,
 				"is_dead": false,
 				"snob_id": ""
 			})
@@ -451,7 +451,7 @@ func _initialize_game_state(room) -> Dictionary:
 					"current_wounds": 0,
 					"x": -1,
 					"y": -1,
-					"has_activated": false,
+					"has_ordered": false,
 					"is_dead": false,
 					"snob_id": snob_id
 				})

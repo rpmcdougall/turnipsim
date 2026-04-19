@@ -291,7 +291,7 @@ func _create_unit_sprite(unit: Types.UnitState) -> ColorRect:
 		sprite.color = sprite.color.lightened(0.4)
 
 	# Dim activated units
-	if unit.has_activated:
+	if unit.has_ordered:
 		sprite.color = sprite.color.darkened(0.4)
 
 	sprite.set_meta("unit_id", unit.id)
@@ -369,7 +369,7 @@ func _update_unit_info() -> void:
 		s.movement, s.attacks, s.inaccuracy, s.wounds, s.vulnerability,
 		unit.model_count, unit.max_models, unit.panic_tokens,
 		unit.equipment,
-		"\n[ACTIVATED]" if unit.has_activated else ""
+		"\n[ORDERED]" if unit.has_ordered else ""
 	]
 
 
@@ -429,12 +429,12 @@ func _handle_combat_click(x: int, y: int) -> void:
 			_update_unit_info()
 		elif selected_unit_id != "":
 			var selected_unit = _get_unit_by_id(selected_unit_id)
-			if selected_unit and not selected_unit.has_activated:
+			if selected_unit and not selected_unit.has_ordered:
 				_attack_unit(selected_unit, clicked_unit)
 	else:
 		if selected_unit_id != "":
 			var selected_unit = _get_unit_by_id(selected_unit_id)
-			if selected_unit and not selected_unit.has_activated:
+			if selected_unit and not selected_unit.has_ordered:
 				_move_unit(selected_unit, x, y)
 
 

@@ -103,7 +103,7 @@ func _test_orders_movement() -> void:
 
 	_test("Reject move of already activated unit", func():
 		var state = _mock_orders_state()
-		state.units[0].has_activated = true
+		state.units[0].has_ordered = true
 
 		var result = GameEngine.move_unit(state, state.units[0].id, state.units[0].x + 1, state.units[0].y)
 
@@ -255,7 +255,7 @@ func _test_turn_management() -> void:
 
 		var result = GameEngine.end_activation(state, state.units[0].id)
 
-		return result.success and result.new_state.units[0].has_activated
+		return result.success and result.new_state.units[0].has_ordered
 	)
 
 	_test("End turn switches active player", func():
@@ -277,7 +277,7 @@ func _test_turn_management() -> void:
 		# Activate all seat 2 units
 		for unit in state.units:
 			if unit.owner_seat == 2:
-				unit.has_activated = true
+				unit.has_ordered = true
 
 		var result = GameEngine.end_turn(state)
 
@@ -294,7 +294,7 @@ func _test_turn_management() -> void:
 
 		for unit in state.units:
 			if unit.owner_seat == 2:
-				unit.has_activated = true
+				unit.has_ordered = true
 
 		var result = GameEngine.end_turn(state)
 
@@ -428,7 +428,7 @@ func _mock_orders_state_all_activated() -> Types.GameState:
 	var state = _mock_orders_state()
 	for unit in state.units:
 		if unit.owner_seat == 1:
-			unit.has_activated = true
+			unit.has_ordered = true
 	return state
 
 
