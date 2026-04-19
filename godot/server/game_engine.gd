@@ -585,16 +585,26 @@ static func end_turn(state: Types.GameState) -> Types.EngineResult:
 # =============================================================================
 
 ## Check for victory condition.
+## Only triggers when both sides have (or had) units — solo mode skips victory checks.
 static func check_victory(state: Types.GameState) -> Dictionary:
+	var units_total_1: int = 0
+	var units_total_2: int = 0
 	var units_alive_1: int = 0
 	var units_alive_2: int = 0
 
 	for unit in state.units:
-		if not unit.is_dead:
-			if unit.owner_seat == 1:
+		if unit.owner_seat == 1:
+			units_total_1 += 1
+			if not unit.is_dead:
 				units_alive_1 += 1
-			else:
+		else:
+			units_total_2 += 1
+			if not unit.is_dead:
 				units_alive_2 += 1
+
+	# Solo mode: one side has no units at all — no victory check
+	if units_total_1 == 0 or units_total_2 == 0:
+		return {"winner": 0, "reason": ""}
 
 	if units_alive_1 == 0 and units_alive_2 > 0:
 		return {"winner": 2, "reason": "Player 1 eliminated"}
@@ -603,7 +613,7 @@ static func check_victory(state: Types.GameState) -> Dictionary:
 	if units_alive_1 == 0 and units_alive_2 == 0:
 		return {"winner": 0, "reason": "Draw (both eliminated)"}
 
-	# Check Headless Chicken: all Snobs dead = instant loss
+	# Headless Chicken: all Snobs dead = instant loss
 	var snobs_alive_1 = 0
 	var snobs_alive_2 = 0
 	for unit in state.units:

@@ -391,7 +391,8 @@ func _ensure_army_ui_exists() -> void:
 	if not scroll_container:
 		scroll_container = ScrollContainer.new()
 		scroll_container.name = "ArmyScrollContainer"
-		scroll_container.custom_minimum_size = Vector2(0, 200)
+		scroll_container.custom_minimum_size = Vector2(0, 120)
+		scroll_container.size_flags_vertical = Control.SIZE_EXPAND_FILL
 		scroll_container.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 		scroll_container.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
 		in_room_vbox.add_child(scroll_container)

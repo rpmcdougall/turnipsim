@@ -325,11 +325,23 @@ func _test_victory_conditions() -> void:
 
 	_test("Headless Chicken: all Snobs dead = instant loss", func():
 		var state = _mock_orders_state()
-		# Kill seat 1's snob (unit 0)
+		# Kill seat 1's snob (unit 0) — seat 2 still has their snob (unit 1)
 		state.units[0].is_dead = true
 
 		var victory = GameEngine.check_victory(state)
 		return victory["winner"] == 2 and "Snobs" in victory["reason"]
+	)
+
+	_test("Solo mode: no victory when only one side has units", func():
+		# Simulate solo mode — only seat 1 units exist
+		var state = Types.GameState.new()
+		state.phase = "orders"
+		state.active_seat = 1
+		state.units.append(_mock_unit("u0", 1, "Toff", "snob", 6, 2, 5, 2, 5, 6, 1))
+		state.units[0].x = 10; state.units[0].y = 10
+
+		var victory = GameEngine.check_victory(state)
+		return victory["winner"] == 0
 	)
 
 	_test("No winner when both have living units and snobs", func():
