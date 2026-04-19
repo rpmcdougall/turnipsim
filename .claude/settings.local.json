@@ -2,7 +2,28 @@
   "permissions": {
     "allow": [
       "Bash(git -C \"C:\\\\Users\\\\rpmcd\\\\Documents\\\\dev\\\\turnipsim\" log --oneline --all)",
-      "Bash(git -C \"C:\\\\Users\\\\rpmcd\\\\Documents\\\\dev\\\\turnipsim\" remote -v)"
+      "Bash(git -C \"C:\\\\Users\\\\rpmcd\\\\Documents\\\\dev\\\\turnipsim\" remote -v)",
+      "Bash(/Applications/Godot.app/Contents/MacOS/Godot:*)",
+      "Bash(gh repo view:*)",
+      "Bash(git add:*)",
+      "Bash(gh project list:*)",
+      "Bash(gh project item-list:*)",
+      "Bash(gh project field-list:*)",
+      "Bash(gh project item-edit:*)",
+      "Bash(gh project item-add:*)",
+      "Bash(gh issue create:*)",
+      "Bash(for issue_num in 10 11 12 13 14 15 16)",
+      "Bash(do)",
+      "Bash(done)",
+      "Bash(for issue_num in 17 18 19 20 21 22 23 24 25)",
+      "Bash(for item_id in PVTI_lAHOAG78Fc4BU8gpzgqTP-s PVTI_lAHOAG78Fc4BU8gpzgqTP-w PVTI_lAHOAG78Fc4BU8gpzgqTP-0 PVTI_lAHOAG78Fc4BU8gpzgqTP-4 PVTI_lAHOAG78Fc4BU8gpzgqTP_A PVTI_lAHOAG78Fc4BU8gpzgqTP_E PVTI_lAHOAG78Fc4BU8gpzgqTP_Q)",
+      "Bash(git commit:*)",
+      "Bash(./test-server-startup.sh:*)",
+      "Bash(grep:*)",
+      "Bash(find:*)",
+      "Bash(git reset:*)",
+      "Bash(git checkout:*)",
+      "Bash(git pull:*)"
     ]
   }
 }
