@@ -1,17 +1,17 @@
 extends SceneTree
-## Demo script to roll and display armies.
+## Demo script to display roster presets.
 ##
 ## Run with: godot --headless --script tests/demo_army_roll.gd
 
 func _init() -> void:
 	print("======================================================================")
-	print("ARMY ROLLER DEMO")
+	print("ROSTER PRESETS DEMO")
 	print("======================================================================")
 	print("")
 
-	# Load the MVP ruleset
+	# Load the v17 ruleset
 	var ruleset = Ruleset.new()
-	var error = ruleset.load_from_file("res://game/rulesets/mvp.json")
+	var error = ruleset.load_from_file("res://game/rulesets/v17.json")
 	if error:
 		print("ERROR: Failed to load ruleset: " + error)
 		quit(1)
@@ -21,21 +21,40 @@ func _init() -> void:
 	print(ruleset.description)
 	print("")
 
-	# Roll 3 different armies to show variety
-	for army_num in range(1, 4):
+	# Load presets from JSON
+	var file = FileAccess.open("res://game/rulesets/v17.json", FileAccess.READ)
+	var json = JSON.new()
+	json.parse(file.get_as_text())
+	var data = json.get_data()
+	var presets = data.get("presets", [])
+
+	for preset_idx in range(presets.size()):
+		var preset = presets[preset_idx]
 		print("----------------------------------------------------------------------")
-		print("ARMY #" + str(army_num))
+		print("PRESET: %s" % preset["name"])
+		print(preset.get("description", ""))
 		print("----------------------------------------------------------------------")
 
-		var roller = ArmyRoller.new()
-		var army = roller.roll_army(ruleset, func(): return randi_range(1, 6))
+		var roster = Types.Roster.from_dict(preset["roster"])
+		print("Total units: %d (Snobs: %d)" % [roster.get_unit_count(), roster.get_snob_count()])
 
-		print("Army size: " + str(army.size()) + " units")
+		# Validate against ruleset
+		var validation = ruleset.validate_roster(roster)
+		if validation == "":
+			print("Validation: PASS")
+		else:
+			print("Validation: FAIL - %s" % validation)
+
 		print("")
 
-		for i in range(army.size()):
-			var unit = army[i]
-			_print_unit(i + 1, unit)
+		var unit_num = 0
+		for snob in roster.snobs:
+			unit_num += 1
+			_print_unit(unit_num, snob.snob_type, snob.equipment, ruleset, true)
+
+			for follower in snob.followers:
+				unit_num += 1
+				_print_unit(unit_num, follower.unit_type, follower.equipment, ruleset, false)
 
 		print("")
 
@@ -45,28 +64,21 @@ func _init() -> void:
 	quit(0)
 
 
-func _print_unit(number: int, unit: Types.Unit) -> void:
-	print("[" + str(number) + "] " + unit.name + " (" + unit.archetype + ")")
+func _print_unit(number: int, unit_type: String, equipment: String, ruleset: Ruleset, is_snob: bool) -> void:
+	var prefix = "" if is_snob else "  "
+	var def_data = ruleset.get_unit_type(unit_type)
 
-	var effective = unit.get_effective_stats()
-	print("    Stats: M" + str(effective.movement) +
-	      " S" + str(effective.shooting) +
-	      " C" + str(effective.combat) +
-	      " R" + str(effective.resolve) +
-	      " W" + str(effective.wounds) +
-	      " Sv" + str(effective.save) + "+")
+	print("%s[%d] %s (%s)" % [prefix, number, unit_type, equipment])
 
-	print("    Weapon: " + unit.weapon.name + " (" + unit.weapon.type + ")")
+	if not def_data.is_empty():
+		var stats = def_data["base_stats"]
+		print("%s    M%d A%d I%d+ W%d V%d+ | Range:%d\" | Models:%d" % [
+			prefix, stats["movement"], stats["attacks"], stats["inaccuracy"],
+			stats["wounds"], stats["vulnerability"], stats.get("weapon_range", 0),
+			def_data.get("model_count", 1)
+		])
 
-	if unit.mutations.size() > 0:
-		print("    Mutations:")
-		for mutation in unit.mutations:
-			var mods = []
-			for stat_name in mutation.stat_modifiers:
-				var mod_value = mutation.stat_modifiers[stat_name]
-				var sign = "+" if mod_value >= 0 else ""
-				mods.append(stat_name.capitalize() + " " + sign + str(mod_value))
-			print("      • " + mutation.name + " — " + mutation.description)
-			print("        (" + ", ".join(mods) + ")")
+		if def_data.has("special_rules") and not def_data["special_rules"].is_empty():
+			print("%s    Rules: %s" % [prefix, ", ".join(def_data["special_rules"])])
 
-	print()
+	print("")

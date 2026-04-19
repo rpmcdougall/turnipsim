@@ -16,10 +16,9 @@ godot/
 ├── entry.tscn          # Main scene — branches on NetworkManager.is_server
 ├── autoloads/          # NetworkManager (mode detection singleton)
 ├── game/               # Pure logic — NO node/scene dependencies
-│   ├── types.gd        # Data classes (RefCounted)
-│   ├── ruleset.gd      # Loads JSON rulesets
-│   ├── army_roller.gd  # roll_army(ruleset, roll_d6: Callable)
-│   └── rulesets/       # One JSON file per ruleset
+│   ├── types.gd        # Stats (M/A/I/W/V), UnitDef, Roster, UnitState, GameState
+│   ├── ruleset.gd      # Loads + validates v17 JSON rulesets, validates rosters
+│   └── rulesets/       # One JSON file per ruleset (v17.json)
 ├── server/             # Server-only (server_main, game_engine, networking)
 ├── client/             # Client-only (main, scenes/menu, lobby, battle)
 └── tests/
@@ -28,7 +27,8 @@ godot/
 ## Key Decisions
 
 - **Dependency injection for dice**: Game logic takes a `roll_d6: Callable` — deterministic testing, server-authoritative rolls
-- **Data-driven rulesets**: JSON files in `game/rulesets/`, not hardcoded GDScript. Engine logic is singular; data varies.
+- **Data-driven rulesets**: JSON files in `game/rulesets/` (v17.json), not hardcoded GDScript. Engine logic is singular; data varies.
+- **Roster-based army submission**: Players build rosters (Snobs + Followers + equipment) validated against ruleset composition rules. Presets available for quick start. Replaces the old random army roller.
 - **gl_compatibility renderer**: Lightest option, no Vulkan requirement
 - **`game/` no-node contract**: Everything in `game/` must be pure RefCounted — no Node, no scene tree, no signals. Safe to use from server, client, or headless tests.
 - **Runtime mode detection**: `--server` CLI arg or `dedicated_server` feature tag → `NetworkManager.is_server`
@@ -36,12 +36,14 @@ godot/
 ## Phase Status
 
 - [x] **Phase 0** — Project scaffold (commit d2f127b)
-- [x] **Phase 1** — Game data: types, simplified ruleset JSON, army roller (commit 9b9b2c1)
-- [x] **Phase 2** — Army rolling UI (client-side, no networking) (commit ab201f5)
+- [ ] **Phase 1** — Game data: v17 types, ruleset JSON, roster format ← REWORKING (was MVP, now v17)
+- [x] ~~Phase 2~~ — Removed (was: Army rolling UI — replaced by Phase 5b)
 - [x] **Phase 3** — ENet networking, lobby, room management (commit 91047e5)
 - [ ] **Phase 4** — Battle gameplay (server-authoritative)
-- [ ] **Phase 5** — Polish, multiple rulesets
+- [ ] **Phase 5** — Polish
+- [ ] **Phase 5b** — Army Submission UI (roster builder + presets)
 - [ ] **Phase 6** — Export presets, deployment
+- [ ] **Phase 7** — Cult mechanics (cult-specific units, special rules, army mods)
 
 ## Conventions
 

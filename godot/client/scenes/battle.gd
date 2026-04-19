@@ -105,7 +105,7 @@ func _create_scene_structure() -> void:
 	combat_panel.add_child(combat_vbox)
 
 	var combat_label = Label.new()
-	combat_label.text = "Combat Phase"
+	combat_label.text = "Orders Phase"
 	combat_vbox.add_child(combat_label)
 
 	end_activation_button = Button.new()
@@ -160,7 +160,7 @@ func _render_state() -> void:
 	# Update turn banner
 	var is_my_turn = current_game_state.active_seat == my_seat
 	var turn_text = "Turn %d - Player %d %s" % [
-		current_game_state.current_turn,
+		current_game_state.current_round,
 		current_game_state.active_seat,
 		"(Your turn)" if is_my_turn else "(Opponent's turn)"
 	]
@@ -170,7 +170,7 @@ func _render_state() -> void:
 	if current_game_state.phase == "placement":
 		placement_panel.visible = is_my_turn
 		combat_panel.visible = false
-	elif current_game_state.phase == "combat":
+	elif current_game_state.phase == "orders":
 		placement_panel.visible = false
 		combat_panel.visible = is_my_turn
 	else:
@@ -236,7 +236,7 @@ func _input(event: InputEvent) -> void:
 		# Handle click based on phase
 		if current_game_state.phase == "placement":
 			_handle_placement_click(grid_x, grid_y)
-		elif current_game_state.phase == "combat":
+		elif current_game_state.phase == "orders":
 			_handle_combat_click(grid_x, grid_y)
 
 
@@ -281,7 +281,7 @@ func _handle_combat_click(x: int, y: int) -> void:
 		if clicked_unit.owner_seat == my_seat:
 			selected_unit_id = clicked_unit.id
 			_render_units()  # Re-render to show selection
-			print("[Battle] Selected unit: %s" % clicked_unit.name)
+			print("[Battle] Selected unit: %s" % clicked_unit.unit_type)
 		# If it's enemy unit and we have selection, attack
 		elif selected_unit_id != "":
 			var selected_unit = _get_unit_by_id(selected_unit_id)
@@ -308,8 +308,8 @@ func _move_unit(unit: Types.UnitState, x: int, y: int) -> void:
 
 ## Attack target unit with selected unit
 func _attack_unit(attacker: Types.UnitState, target: Types.UnitState) -> void:
-	# Determine action type based on weapon
-	var action_type = "shoot" if attacker.weapon.type == "ranged" else "charge"
+	# Determine action type: shoot if unit has ranged weapon_range, otherwise charge
+	var action_type = "shoot" if attacker.base_stats.weapon_range > 0 and not attacker.has_powder_smoke else "charge"
 
 	var action_data = {
 		"type": action_type,

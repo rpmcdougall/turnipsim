@@ -1,0 +1,345 @@
+{
+  "name": "Turnip28 Core Rules v17",
+  "version": "17",
+  "description": "Official Turnip28 v17 core rules — unit types, equipment, and army composition",
+
+  "equipment_types": {
+    "black_powder": {
+      "name": "Black Powder Weapons",
+      "type": "ranged",
+      "description": "Rusted relics. Generate powder smoke token when shooting — can't shoot again until next round."
+    },
+    "missile": {
+      "name": "Missile Weapons",
+      "type": "ranged",
+      "description": "Bows, slings, crossbows. Target's Vulnerability reduced by 2 when shot at."
+    },
+    "close_combat": {
+      "name": "Close Combat Weapons",
+      "type": "melee",
+      "description": "-1 Inaccuracy for melee attacks. May re-roll charge distance dice (must accept new result)."
+    },
+    "pistols_and_sabres": {
+      "name": "Pistols and Sabres",
+      "type": "snob",
+      "description": "Snob equipment. No powder smoke when shooting. Not considered close combat weapons."
+    }
+  },
+
+  "special_rules": {
+    "safety_in_numbers": {
+      "name": "Safety in Numbers",
+      "description": "If the unit contains 8 or more models, it is Fearless."
+    },
+    "sharpshooters": {
+      "name": "Sharpshooters",
+      "description": "When shooting or charging, this unit can target any enemy unit, not just the closest."
+    },
+    "skirmish": {
+      "name": "Skirmish",
+      "description": "When this unit is the target of a shooting attack, increase the Inaccuracy of the shooter by 2."
+    },
+    "fearless": {
+      "name": "Fearless",
+      "description": "Every time this unit is required to retreat, on a 3+ it does not retreat (treated as passed panic test)."
+    },
+    "vanguard": {
+      "name": "Vanguard",
+      "description": "After deployment, move this unit up to its Movement characteristic before the game starts."
+    },
+    "dash": {
+      "name": "Dash",
+      "description": "This unit may make a free move up to its Movement characteristic after completing an order."
+    },
+    "bowel_loosening_charge": {
+      "name": "Bowel-Loosening Charge",
+      "description": "When this unit charges, the target must re-roll any successful panic tests."
+    },
+    "unstable_icon": {
+      "name": "Unstable Icon",
+      "description": "If this unit is charged, the charging unit must take a dangerous terrain test."
+    },
+    "stubborn_fanatics": {
+      "name": "Stubborn Fanatics",
+      "description": "This unit never retreats. If it would retreat, it stays in place."
+    },
+    "preliminary_bombardment": {
+      "name": "Preliminary Bombardment",
+      "description": "Before the game starts, this unit makes one free shooting attack against the closest enemy unit."
+    },
+    "immobile": {
+      "name": "Immobile",
+      "description": "This unit can never be moved for any reason."
+    },
+    "toff_off": {
+      "name": "Toff Off!",
+      "description": "When Made Ready within 18\" and LOS of enemy Toff, may propose a duel. Opponent must accept. Both Toffs make simultaneous melee attacks until one perishes."
+    }
+  },
+
+  "unit_types": {
+    "Toff": {
+      "unit_type": "Toff",
+      "category": "snob",
+      "model_count": 1,
+      "base_stats": {
+        "movement": 6,
+        "attacks": 2,
+        "inaccuracy": 5,
+        "wounds": 2,
+        "vulnerability": 5,
+        "weapon_range": 6
+      },
+      "special_rules": ["toff_off"],
+      "allowed_equipment": ["pistols_and_sabres"],
+      "description": "Aristocratic Cult leader. Command range 6\". A Regiment may only have one Toff."
+    },
+    "Toady": {
+      "unit_type": "Toady",
+      "category": "snob",
+      "model_count": 1,
+      "base_stats": {
+        "movement": 6,
+        "attacks": 1,
+        "inaccuracy": 5,
+        "wounds": 1,
+        "vulnerability": 5,
+        "weapon_range": 6
+      },
+      "special_rules": [],
+      "allowed_equipment": ["pistols_and_sabres"],
+      "description": "Snivelling subcommander. Command range 3\"."
+    },
+    "Fodder": {
+      "unit_type": "Fodder",
+      "category": "infantry",
+      "model_count": 12,
+      "base_stats": {
+        "movement": 6,
+        "attacks": 1,
+        "inaccuracy": 6,
+        "wounds": 1,
+        "vulnerability": 6,
+        "weapon_range": 18
+      },
+      "special_rules": ["safety_in_numbers"],
+      "allowed_equipment": ["black_powder", "missile", "close_combat"],
+      "description": "The masses. 12 malnourished saps in tight order. Fearless at 8+ models."
+    },
+    "Chaff": {
+      "unit_type": "Chaff",
+      "category": "infantry",
+      "model_count": 4,
+      "base_stats": {
+        "movement": 6,
+        "attacks": 1,
+        "inaccuracy": 5,
+        "wounds": 1,
+        "vulnerability": 6,
+        "weapon_range": 18
+      },
+      "special_rules": ["sharpshooters", "skirmish"],
+      "allowed_equipment": ["black_powder", "missile", "close_combat"],
+      "description": "Light skirmishers. Can target any enemy. Hard to hit with shooting (+2 I for shooters)."
+    },
+    "Brutes": {
+      "unit_type": "Brutes",
+      "category": "infantry",
+      "model_count": 6,
+      "base_stats": {
+        "movement": 6,
+        "attacks": 2,
+        "inaccuracy": 5,
+        "wounds": 1,
+        "vulnerability": 5,
+        "weapon_range": 18
+      },
+      "special_rules": ["fearless", "vanguard"],
+      "allowed_equipment": ["black_powder", "missile", "close_combat"],
+      "description": "Dedicated fanatics. Fearless (3+ to ignore retreat). Deploy forward with Vanguard."
+    },
+    "Whelps": {
+      "unit_type": "Whelps",
+      "category": "cavalry",
+      "model_count": 4,
+      "base_stats": {
+        "movement": 12,
+        "attacks": 2,
+        "inaccuracy": 5,
+        "wounds": 2,
+        "vulnerability": 6,
+        "weapon_range": 18
+      },
+      "special_rules": ["dash"],
+      "allowed_equipment": ["black_powder", "missile", "close_combat"],
+      "description": "Fast raiders. Free move after completing an order."
+    },
+    "Bastards": {
+      "unit_type": "Bastards",
+      "category": "cavalry",
+      "model_count": 3,
+      "base_stats": {
+        "movement": 12,
+        "attacks": 4,
+        "inaccuracy": 5,
+        "wounds": 2,
+        "vulnerability": 5,
+        "weapon_range": 18
+      },
+      "special_rules": ["bowel_loosening_charge"],
+      "allowed_equipment": ["black_powder", "missile", "close_combat"],
+      "description": "Reckless heavy cavalry. Targets must re-roll successful panic tests when charged."
+    },
+    "StumpGun": {
+      "unit_type": "Stump Gun",
+      "category": "artillery",
+      "model_count": 1,
+      "base_stats": {
+        "movement": 0,
+        "attacks": 3,
+        "inaccuracy": 6,
+        "wounds": 3,
+        "vulnerability": 5,
+        "weapon_range": 48
+      },
+      "special_rules": ["immobile", "unstable_icon", "stubborn_fanatics", "preliminary_bombardment"],
+      "allowed_equipment": ["black_powder"],
+      "description": "Ancient cannon. Immobile. Round Shot (48\", 3 wounds no save) or Grape Shot (12\", 5 dice)."
+    }
+  },
+
+  "composition": {
+    "snob_count": 3,
+    "followers_per_toff": 2,
+    "followers_per_toady": 1,
+    "max_rounds": 4,
+    "notes": "Standard 3-Snob game: 1 Toff (2 Followers) + 2 Toadies (1 Follower each) = 7 units total"
+  },
+
+  "presets": [
+    {
+      "name": "Balanced Regiment",
+      "description": "A well-rounded force with a mix of infantry and firepower.",
+      "roster": {
+        "cult": "none",
+        "snobs": [
+          {
+            "snob_type": "Toff",
+            "equipment": "pistols_and_sabres",
+            "followers": [
+              { "unit_type": "Fodder", "equipment": "black_powder" },
+              { "unit_type": "Brutes", "equipment": "close_combat" }
+            ]
+          },
+          {
+            "snob_type": "Toady",
+            "equipment": "pistols_and_sabres",
+            "followers": [
+              { "unit_type": "Chaff", "equipment": "black_powder" }
+            ]
+          },
+          {
+            "snob_type": "Toady",
+            "equipment": "pistols_and_sabres",
+            "followers": [
+              { "unit_type": "Fodder", "equipment": "black_powder" }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "Cavalry Rush",
+      "description": "Fast-moving force built around mounted units.",
+      "roster": {
+        "cult": "none",
+        "snobs": [
+          {
+            "snob_type": "Toff",
+            "equipment": "pistols_and_sabres",
+            "followers": [
+              { "unit_type": "Whelps", "equipment": "black_powder" },
+              { "unit_type": "Bastards", "equipment": "close_combat" }
+            ]
+          },
+          {
+            "snob_type": "Toady",
+            "equipment": "pistols_and_sabres",
+            "followers": [
+              { "unit_type": "Fodder", "equipment": "black_powder" }
+            ]
+          },
+          {
+            "snob_type": "Toady",
+            "equipment": "pistols_and_sabres",
+            "followers": [
+              { "unit_type": "Chaff", "equipment": "missile" }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "Gunline",
+      "description": "Maximum firepower with artillery support.",
+      "roster": {
+        "cult": "none",
+        "snobs": [
+          {
+            "snob_type": "Toff",
+            "equipment": "pistols_and_sabres",
+            "followers": [
+              { "unit_type": "Fodder", "equipment": "black_powder" },
+              { "unit_type": "StumpGun", "equipment": "black_powder" }
+            ]
+          },
+          {
+            "snob_type": "Toady",
+            "equipment": "pistols_and_sabres",
+            "followers": [
+              { "unit_type": "Fodder", "equipment": "black_powder" }
+            ]
+          },
+          {
+            "snob_type": "Toady",
+            "equipment": "pistols_and_sabres",
+            "followers": [
+              { "unit_type": "Brutes", "equipment": "black_powder" }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "Melee Horde",
+      "description": "Close combat specialists with maximum bodies.",
+      "roster": {
+        "cult": "none",
+        "snobs": [
+          {
+            "snob_type": "Toff",
+            "equipment": "pistols_and_sabres",
+            "followers": [
+              { "unit_type": "Fodder", "equipment": "close_combat" },
+              { "unit_type": "Brutes", "equipment": "close_combat" }
+            ]
+          },
+          {
+            "snob_type": "Toady",
+            "equipment": "pistols_and_sabres",
+            "followers": [
+              { "unit_type": "Fodder", "equipment": "close_combat" }
+            ]
+          },
+          {
+            "snob_type": "Toady",
+            "equipment": "pistols_and_sabres",
+            "followers": [
+              { "unit_type": "Bastards", "equipment": "close_combat" }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

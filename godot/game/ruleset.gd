@@ -1,19 +1,22 @@
 class_name Ruleset
 extends RefCounted
-## Loads and exposes a ruleset from a JSON data file.
+## Loads and exposes a Turnip28 ruleset from a JSON data file.
+##
+## The ruleset defines unit types, equipment, special rules, and army
+## composition constraints. It does NOT contain game logic — that lives
+## in the game engine.
 ##
 ## Usage:
 ##   var rs = Ruleset.new()
-##   var error = rs.load_from_file("res://game/rulesets/mvp.json")
-##   if error:
-##       push_error("Failed to load ruleset: " + error)
+##   var error = rs.load_from_file("res://game/rulesets/v17.json")
 
 var name: String = ""
 var version: String = ""
 var description: String = ""
-var archetypes: Dictionary = {}  # archetype_name -> archetype_data
-var weapons: Array[Dictionary] = []
-var composition_rules: Dictionary = {}
+var unit_types: Dictionary = {}       # unit_type_key -> UnitDef data dict
+var equipment_types: Dictionary = {}  # equipment_key -> Equipment data dict
+var special_rules: Dictionary = {}    # rule_key -> { name, description }
+var composition: Dictionary = {}      # Army building constraints
 
 var _is_loaded: bool = false
 
@@ -50,176 +53,188 @@ func load_from_file(path: String) -> String:
 	return ""
 
 
-## Validate the loaded data and populate fields.
 func _validate_and_load(data: Dictionary) -> String:
-	# Required top-level fields
-	if not data.has("name"):
-		return "Missing required field: name"
-	if not data.has("archetypes"):
-		return "Missing required field: archetypes"
-	if not data.has("weapons"):
-		return "Missing required field: weapons"
-	if not data.has("composition_rules"):
-		return "Missing required field: composition_rules"
+	for field in ["name", "unit_types", "equipment_types", "composition"]:
+		if not data.has(field):
+			return "Missing required field: " + field
 
 	name = data["name"]
 	version = data.get("version", "")
 	description = data.get("description", "")
 
-	# Validate archetypes
-	if typeof(data["archetypes"]) != TYPE_DICTIONARY:
-		return "archetypes must be a dictionary"
+	# Validate equipment types
+	if typeof(data["equipment_types"]) != TYPE_DICTIONARY:
+		return "equipment_types must be a dictionary"
+	for key in data["equipment_types"]:
+		var equip = data["equipment_types"][key]
+		if typeof(equip) != TYPE_DICTIONARY:
+			return "Equipment '" + key + "' must be a dictionary"
+		if not equip.has("name"):
+			return "Equipment '" + key + "' missing field: name"
+		if not equip.has("type"):
+			return "Equipment '" + key + "' missing field: type"
+	equipment_types = data["equipment_types"]
 
-	for archetype_key in data["archetypes"]:
-		var archetype_data = data["archetypes"][archetype_key]
-		var error = _validate_archetype(archetype_key, archetype_data)
+	# Validate unit types
+	if typeof(data["unit_types"]) != TYPE_DICTIONARY:
+		return "unit_types must be a dictionary"
+	for key in data["unit_types"]:
+		var error = _validate_unit_type(key, data["unit_types"][key])
 		if error:
 			return error
-		archetypes[archetype_key] = archetype_data
+	unit_types = data["unit_types"]
 
-	if archetypes.is_empty():
-		return "At least one archetype is required"
+	if unit_types.is_empty():
+		return "At least one unit type is required"
 
-	# Validate weapons
-	if typeof(data["weapons"]) != TYPE_ARRAY:
-		return "weapons must be an array"
+	# Load special rules (optional — just descriptive text)
+	if data.has("special_rules"):
+		if typeof(data["special_rules"]) != TYPE_DICTIONARY:
+			return "special_rules must be a dictionary"
+		special_rules = data["special_rules"]
 
-	for weapon_data in data["weapons"]:
-		var error = _validate_weapon(weapon_data)
-		if error:
-			return error
-		weapons.append(weapon_data)
-
-	if weapons.is_empty():
-		return "At least one weapon is required"
-
-	# Validate composition rules
-	if typeof(data["composition_rules"]) != TYPE_DICTIONARY:
-		return "composition_rules must be a dictionary"
-
-	var error = _validate_composition_rules(data["composition_rules"])
+	# Validate composition
+	if typeof(data["composition"]) != TYPE_DICTIONARY:
+		return "composition must be a dictionary"
+	var error = _validate_composition(data["composition"])
 	if error:
 		return error
-	composition_rules = data["composition_rules"]
+	composition = data["composition"]
 
 	return ""
 
 
-func _validate_archetype(key: String, data: Dictionary) -> String:
-	if not data.has("name"):
-		return "Archetype '" + key + "' missing field: name"
-	if not data.has("base_stats"):
-		return "Archetype '" + key + "' missing field: base_stats"
-	if not data.has("mutation_tables"):
-		return "Archetype '" + key + "' missing field: mutation_tables"
+func _validate_unit_type(key: String, data: Dictionary) -> String:
+	if typeof(data) != TYPE_DICTIONARY:
+		return "Unit type '" + key + "' must be a dictionary"
 
-	# Validate base_stats
+	for field in ["unit_type", "category", "model_count", "base_stats"]:
+		if not data.has(field):
+			return "Unit type '" + key + "' missing field: " + field
+
+	var category = data["category"]
+	if category not in ["snob", "infantry", "cavalry", "artillery"]:
+		return "Unit type '" + key + "' invalid category: " + str(category)
+
 	var stats = data["base_stats"]
 	if typeof(stats) != TYPE_DICTIONARY:
-		return "Archetype '" + key + "' base_stats must be a dictionary"
+		return "Unit type '" + key + "' base_stats must be a dictionary"
 
-	var required_stats = ["movement", "shooting", "combat", "resolve", "wounds", "save"]
-	for stat in required_stats:
+	for stat in ["movement", "attacks", "inaccuracy", "wounds", "vulnerability"]:
 		if not stats.has(stat):
-			return "Archetype '" + key + "' base_stats missing: " + stat
-
-	# Validate mutation_tables
-	if typeof(data["mutation_tables"]) != TYPE_ARRAY:
-		return "Archetype '" + key + "' mutation_tables must be an array"
-
-	for table in data["mutation_tables"]:
-		var error = _validate_mutation_table(key, table)
-		if error:
-			return error
+			return "Unit type '" + key + "' base_stats missing: " + stat
 
 	return ""
 
 
-func _validate_mutation_table(archetype_key: String, table: Dictionary) -> String:
-	if not table.has("name"):
-		return "Mutation table in archetype '" + archetype_key + "' missing field: name"
-	if not table.has("rolls"):
-		return "Mutation table '" + table.get("name", "?") + "' missing field: rolls"
+func _validate_composition(comp: Dictionary) -> String:
+	if not comp.has("snob_count"):
+		return "composition missing field: snob_count"
+	if not comp.has("followers_per_toff"):
+		return "composition missing field: followers_per_toff"
+	if not comp.has("followers_per_toady"):
+		return "composition missing field: followers_per_toady"
+	return ""
 
-	if typeof(table["rolls"]) != TYPE_ARRAY:
-		return "Mutation table '" + table["name"] + "' rolls must be an array"
 
-	for roll in table["rolls"]:
-		if typeof(roll) != TYPE_DICTIONARY:
-			return "Mutation table '" + table["name"] + "' roll entry must be a dictionary"
-		if not roll.has("range"):
-			return "Mutation table '" + table["name"] + "' roll missing field: range"
-		if not roll.has("name"):
-			return "Mutation table '" + table["name"] + "' roll missing field: name"
+## Get a unit type definition by key, or empty dict if not found.
+func get_unit_type(unit_type_key: String) -> Dictionary:
+	return unit_types.get(unit_type_key, {})
+
+
+## Get a UnitDef object for a unit type key.
+func get_unit_def(unit_type_key: String) -> Types.UnitDef:
+	var data = get_unit_type(unit_type_key)
+	if data.is_empty():
+		return null
+	return Types.UnitDef.from_dict(data)
+
+
+## Get an equipment type definition by key.
+func get_equipment(equipment_key: String) -> Dictionary:
+	return equipment_types.get(equipment_key, {})
+
+
+## Get all unit type keys for a given category.
+func get_unit_types_by_category(category: String) -> Array[String]:
+	var result: Array[String] = []
+	for key in unit_types:
+		if unit_types[key].get("category", "") == category:
+			result.append(key)
+	return result
+
+
+## Get all follower unit type keys (infantry + cavalry + artillery).
+func get_follower_types() -> Array[String]:
+	var result: Array[String] = []
+	for key in unit_types:
+		var cat = unit_types[key].get("category", "")
+		if cat in ["infantry", "cavalry", "artillery"]:
+			result.append(key)
+	return result
+
+
+## Get allowed equipment keys for a unit type.
+func get_allowed_equipment(unit_type_key: String) -> Array[String]:
+	var data = get_unit_type(unit_type_key)
+	if data.is_empty():
+		return []
+	var result: Array[String] = []
+	if data.has("allowed_equipment"):
+		for e in data["allowed_equipment"]:
+			result.append(str(e))
+	return result
+
+
+## Validate a roster against this ruleset's composition rules.
+## Returns empty string if valid, error message if not.
+func validate_roster(roster: Types.Roster) -> String:
+	if roster.snobs.is_empty():
+		return "Roster must have at least one Snob"
+
+	var toff_count = 0
+	var toady_count = 0
+
+	for snob in roster.snobs:
+		if snob.snob_type == "Toff":
+			toff_count += 1
+		elif snob.snob_type == "Toady":
+			toady_count += 1
+		else:
+			return "Unknown Snob type: " + snob.snob_type
+
+		# Validate Snob equipment
+		var snob_def = get_unit_type(snob.snob_type)
+		if snob_def.is_empty():
+			return "Unknown unit type: " + snob.snob_type
+
+		# Validate follower count
+		var max_followers = composition.get("followers_per_toff", 2) if snob.snob_type == "Toff" else composition.get("followers_per_toady", 1)
+		if snob.followers.size() > max_followers:
+			return snob.snob_type + " has too many followers: " + str(snob.followers.size()) + " (max " + str(max_followers) + ")"
+
+		# Validate each follower
+		for follower in snob.followers:
+			var fdef = get_unit_type(follower.unit_type)
+			if fdef.is_empty():
+				return "Unknown follower unit type: " + follower.unit_type
+			var fcat = fdef.get("category", "")
+			if fcat == "snob":
+				return "Cannot take a Snob as a follower: " + follower.unit_type
+			# Validate equipment choice
+			var allowed = get_allowed_equipment(follower.unit_type)
+			if not allowed.is_empty() and follower.equipment not in allowed:
+				return follower.unit_type + " cannot equip " + follower.equipment + " (allowed: " + ", ".join(allowed) + ")"
+
+	if toff_count != 1:
+		return "Roster must have exactly 1 Toff (has " + str(toff_count) + ")"
+
+	var expected_toadies = composition.get("snob_count", 3) - 1
+	if toady_count != expected_toadies:
+		return "Roster must have " + str(expected_toadies) + " Toadies (has " + str(toady_count) + ")"
 
 	return ""
 
 
-func _validate_weapon(data: Dictionary) -> String:
-	if not data.has("name"):
-		return "Weapon missing field: name"
-	if not data.has("type"):
-		return "Weapon '" + data.get("name", "?") + "' missing field: type"
-
-	var weapon_type = data["type"]
-	if weapon_type != "melee" and weapon_type != "ranged":
-		return "Weapon '" + data["name"] + "' type must be 'melee' or 'ranged', got: " + str(weapon_type)
-
-	return ""
-
-
-func _validate_composition_rules(rules: Dictionary) -> String:
-	if not rules.has("min_units"):
-		return "composition_rules missing field: min_units"
-	if not rules.has("max_units"):
-		return "composition_rules missing field: max_units"
-
-	var min_units = rules["min_units"]
-	var max_units = rules["max_units"]
-
-	if typeof(min_units) != TYPE_INT and typeof(min_units) != TYPE_FLOAT:
-		return "composition_rules min_units must be a number"
-	if typeof(max_units) != TYPE_INT and typeof(max_units) != TYPE_FLOAT:
-		return "composition_rules max_units must be a number"
-	if min_units > max_units:
-		return "composition_rules min_units cannot be greater than max_units"
-
-	return ""
-
-
-## Get an archetype by name, or null if not found.
-func get_archetype(archetype_name: String) -> Dictionary:
-	return archetypes.get(archetype_name, {})
-
-
-## Get all weapon names for a given archetype from composition rules.
-func get_allowed_weapons_for_archetype(archetype_name: String) -> Array:
-	if composition_rules.has("allowed_weapons"):
-		var allowed = composition_rules["allowed_weapons"]
-		if allowed.has(archetype_name):
-			return allowed[archetype_name]
-	return []
-
-
-## Get a random weapon from the allowed list for an archetype.
-func get_random_weapon_for_archetype(archetype_name: String, roll_fn: Callable) -> Dictionary:
-	var allowed = get_allowed_weapons_for_archetype(archetype_name)
-	if allowed.is_empty():
-		return {}
-
-	# Find matching weapons
-	var matching_weapons: Array[Dictionary] = []
-	for weapon in weapons:
-		if weapon["name"] in allowed:
-			matching_weapons.append(weapon)
-
-	if matching_weapons.is_empty():
-		return {}
-
-	var index = roll_fn.call() % matching_weapons.size()
-	return matching_weapons[index]
-
-
-## Check if the ruleset is loaded and valid.
 func is_loaded() -> bool:
 	return _is_loaded
