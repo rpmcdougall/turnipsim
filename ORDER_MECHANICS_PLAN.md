@@ -11,8 +11,8 @@ Replacing free-form move/shoot/charge with the full Turnip28 v17 order sequence.
 - [x] Step 1: GameState + UnitState field additions (commit 314c7b4)
 - [x] Step 2: Engine state machine (commit 55278f9)
 - [x] Step 3: Network server action routing
+- [x] Step 5: Engine tests rewrite (done before Step 4 to validate state machine before UI churn)
 - [ ] Step 4: Client UI rewrite
-- [ ] Step 5: Engine tests rewrite
 
 ## Acceptable Simplifications (for now)
 - No retreat movement (panic test adds panic but no physical retreat)
