@@ -722,13 +722,25 @@ func _render_order_execute_panel() -> void:
 
 	match order_type:
 		"volley_fire":
-			order_execute_instruction.text = "Click an enemy unit to fire."
+			if unit and not _has_valid_enemy_in_range(unit, unit.base_stats.weapon_range):
+				order_execute_instruction.text = "No enemies in range — the volley fizzles."
+				order_execute_confirm_button.text = "Continue (no effect)"
+				order_execute_confirm_button.visible = true
+			else:
+				order_execute_instruction.text = "Click an enemy unit to fire."
+				order_execute_confirm_button.text = "Confirm move (no shot)"
 		"charge":
 			var bonus = current_game_state.current_order_move_bonus
 			var move = unit.base_stats.movement if unit else 0
-			order_execute_instruction.text = "Click enemy to charge (range %d + %d = %d)." % [
-				move, bonus, move + bonus
-			]
+			if unit and not _has_valid_enemy_in_range(unit, move + bonus):
+				order_execute_instruction.text = "No enemies in charge range — the charge fizzles."
+				order_execute_confirm_button.text = "Continue (no effect)"
+				order_execute_confirm_button.visible = true
+			else:
+				order_execute_instruction.text = "Click enemy to charge (range %d + %d = %d)." % [
+					move, bonus, move + bonus
+				]
+				order_execute_confirm_button.text = "Confirm move (no shot)"
 		"march":
 			var bonus = current_game_state.current_order_move_bonus
 			var move = unit.base_stats.movement if unit else 0
@@ -795,10 +807,27 @@ func _on_self_order_pressed(order_type: String) -> void:
 
 
 func _on_execute_confirm_pressed() -> void:
+	var order_type = current_game_state.current_order_type
+	# Volley fire / charge fizzle path — no valid targets in range.
+	if order_type == "volley_fire" or order_type == "charge":
+		_send_execute_order({"fizzle": true})
+		return
 	# Move-and-shoot: commit the staged destination with no target
 	if pending_move_x == -1:
 		return
 	_send_execute_order({"x": pending_move_x, "y": pending_move_y})
+
+
+func _has_valid_enemy_in_range(unit: Types.UnitState, reach: int) -> bool:
+	if reach <= 0:
+		return false
+	for u in current_game_state.units:
+		if u.is_dead or u.owner_seat == unit.owner_seat:
+			continue
+		var d: int = abs(u.x - unit.x) + abs(u.y - unit.y)
+		if d <= reach:
+			return true
+	return false
 
 
 # =============================================================================

@@ -332,6 +332,29 @@ func _test_execute_volley_fire() -> void:
 		return result.success and result.new_state.units[1].panic_tokens == 1
 	)
 
+	_test("volley_fire: fizzle succeeds when no enemy in range", func():
+		var state = _mock_orders_state()
+		# u0 Toff weapon_range=6 at (10,30); u1 at (10,2) → distance 28, out of range.
+		# u3 at (12,2) → distance 26, also out of range. No valid target.
+		state = GameEngine.select_snob(state, state.units[0].id).new_state
+		state = GameEngine.declare_order(state, state.units[0].id, "volley_fire", 3, [3, 3]).new_state
+
+		var result = GameEngine.execute_order(state, {"fizzle": true}, [])
+		return (result.success
+			and result.new_state.units[0].has_ordered
+			and result.new_state.units[1].current_wounds == 0)
+	)
+
+	_test("volley_fire: fizzle rejected when a valid target exists", func():
+		var state = _mock_orders_state_ranged()
+		# Enemies are in range (18); fizzle should be refused.
+		state = GameEngine.select_snob(state, state.units[0].id).new_state
+		state = GameEngine.declare_order(state, state.units[0].id, "volley_fire", 3, [3, 3]).new_state
+
+		var result = GameEngine.execute_order(state, {"fizzle": true}, [])
+		return not result.success and "Cannot fizzle" in result.error
+	)
+
 	_test("volley_fire: multi-model unit fires one attack per model", func():
 		var state = _mock_orders_state_ranged()
 		# Make Fodder a 4-model ranged unit
@@ -517,6 +540,30 @@ func _test_execute_charge() -> void:
 		var result = GameEngine.execute_order(state, {"target_id": state.units[1].id}, [5, 5, 1, 1])
 
 		return result.success and result.new_state.units[1].is_dead
+	)
+
+	_test("charge: fizzle succeeds when no enemy in charge range", func():
+		var state = _mock_orders_state()
+		# Default Toff M=6, blunder roll=1 caps bonus. Put enemies far away.
+		state.units[0].x = 10; state.units[0].y = 30
+		state.units[1].x = 10; state.units[1].y = 2   # distance 28
+		state.units[3].x = 12; state.units[3].y = 2   # distance 26
+		state = GameEngine.select_snob(state, state.units[0].id).new_state
+		state = GameEngine.declare_order(state, state.units[0].id, "charge", 3, [3, 3]).new_state
+
+		var result = GameEngine.execute_order(state, {"fizzle": true}, [])
+		return (result.success and result.new_state.units[0].has_ordered)
+	)
+
+	_test("charge: fizzle rejected when a valid target exists", func():
+		var state = _mock_orders_state()
+		state.units[0].x = 10; state.units[0].y = 10
+		state.units[1].x = 11; state.units[1].y = 10  # adjacent, clearly chargeable
+		state = GameEngine.select_snob(state, state.units[0].id).new_state
+		state = GameEngine.declare_order(state, state.units[0].id, "charge", 3, [3, 3]).new_state
+
+		var result = GameEngine.execute_order(state, {"fizzle": true}, [])
+		return not result.success and "Cannot fizzle" in result.error
 	)
 
 

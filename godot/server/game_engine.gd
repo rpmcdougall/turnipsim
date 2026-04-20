@@ -454,6 +454,26 @@ static func execute_order(state: Types.GameState, params: Dictionary, dice_resul
 static func _execute_volley_fire(state: Types.GameState, unit: Types.UnitState, params: Dictionary, dice_results: Array) -> Types.EngineResult:
 	var result = Types.EngineResult.new()
 
+	# Fizzle path: no valid target exists in range. Advance without combat.
+	if params.get("fizzle", false):
+		if _has_valid_volley_target(state, unit):
+			result.error = "Cannot fizzle: valid targets exist in range"
+			return result
+		var fizzled_state = _clone_state(state)
+		_advance_after_order(fizzled_state)
+		fizzled_state.action_log.append({
+			"round": state.current_round,
+			"seat": state.active_seat,
+			"action": "volley_fire_fizzled",
+			"unit_id": unit.id,
+			"unit_type": unit.unit_type,
+			"blundered": state.current_order_blundered
+		})
+		result.success = true
+		result.new_state = fizzled_state
+		result.description = "%s volley fire fizzled (no targets in range)" % unit.unit_type
+		return result
+
 	var target_id = params.get("target_id", "")
 	var target = _find_unit(state, target_id)
 	if not target:
@@ -630,6 +650,26 @@ static func _execute_march(state: Types.GameState, unit: Types.UnitState, params
 
 static func _execute_charge(state: Types.GameState, unit: Types.UnitState, params: Dictionary, dice_results: Array) -> Types.EngineResult:
 	var result = Types.EngineResult.new()
+
+	# Fizzle path: no chargeable enemy in range. Advance without combat.
+	if params.get("fizzle", false):
+		if _has_valid_charge_target(state, unit):
+			result.error = "Cannot fizzle: valid charge targets exist in range"
+			return result
+		var fizzled_state = _clone_state(state)
+		_advance_after_order(fizzled_state)
+		fizzled_state.action_log.append({
+			"round": state.current_round,
+			"seat": state.active_seat,
+			"action": "charge_fizzled",
+			"unit_id": unit.id,
+			"unit_type": unit.unit_type,
+			"blundered": state.current_order_blundered
+		})
+		result.success = true
+		result.new_state = fizzled_state
+		result.description = "%s charge fizzled (no targets in range)" % unit.unit_type
+		return result
 
 	var target_id = params.get("target_id", "")
 	var target = _find_unit(state, target_id)
@@ -978,6 +1018,34 @@ static func _find_unit_in(state: Types.GameState, unit_id: String) -> Types.Unit
 static func _has_unordered_snobs(state: Types.GameState, seat: int) -> bool:
 	for unit in state.units:
 		if unit.owner_seat == seat and unit.is_snob() and not unit.is_dead and not unit.has_ordered:
+			return true
+	return false
+
+
+## Does at least one alive enemy unit sit inside the shooter's weapon range?
+static func _has_valid_volley_target(state: Types.GameState, unit: Types.UnitState) -> bool:
+	var wr: int = unit.base_stats.weapon_range
+	if wr <= 0:
+		return false
+	for u in state.units:
+		if u.is_dead or u.owner_seat == unit.owner_seat:
+			continue
+		var d: int = abs(u.x - unit.x) + abs(u.y - unit.y)
+		if d <= wr:
+			return true
+	return false
+
+
+## Does at least one alive enemy unit sit inside the charger's M + move_bonus range?
+static func _has_valid_charge_target(state: Types.GameState, unit: Types.UnitState) -> bool:
+	var reach: int = unit.base_stats.movement + state.current_order_move_bonus
+	if reach <= 0:
+		return false
+	for u in state.units:
+		if u.is_dead or u.owner_seat == unit.owner_seat:
+			continue
+		var d: int = abs(u.x - unit.x) + abs(u.y - unit.y)
+		if d <= reach:
 			return true
 	return false
 
