@@ -18,6 +18,7 @@ run/flush_stdout_on_print=true
 [autoload]
 
 NetworkManager="*res://autoloads/network_manager.gd"
+NetworkClient="*res://autoloads/network_client.gd"
 
 [display]
 
