@@ -32,6 +32,12 @@ jobs:
           ../Godot_v4.6.2-stable_linux.x86_64 --headless -s tests/test_runner.gd --quit
         timeout-minutes: 2
 
+      - name: Run game engine tests (v17 order state machine + combat + victory)
+        working-directory: godot
+        run: |
+          ../Godot_v4.6.2-stable_linux.x86_64 --headless -s tests/test_game_engine.gd --quit
+        timeout-minutes: 2
+
       - name: Validate UI scenes
         working-directory: godot
         run: |

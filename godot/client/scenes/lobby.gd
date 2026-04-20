@@ -103,8 +103,23 @@ func _disconnect_from_server() -> void:
 	is_connected = false
 	is_in_room = false
 	NetworkManager.reset_seat()  # Clear seat assignment
+	_reset_army_state()
 	status_label.text = "Disconnected"
 	_show_connection_panel()
+
+
+## Clear roster + submission flags so a reconnect/rejoin starts fresh.
+## Without this, has_submitted_army persists and hides the Submit button
+## after joining a new room, leaving the client stuck ready-without-army.
+func _reset_army_state() -> void:
+	my_roster = null
+	has_submitted_army = false
+	if submit_army_button:
+		submit_army_button.disabled = true
+		submit_army_button.visible = false
+	if army_display:
+		for child in army_display.get_children():
+			child.queue_free()
 
 
 func _on_connected_to_server() -> void:
@@ -126,6 +141,7 @@ func _on_server_disconnected() -> void:
 	status_label.text = "Server disconnected"
 	is_connected = false
 	is_in_room = false
+	_reset_army_state()
 	_show_connection_panel()
 
 
