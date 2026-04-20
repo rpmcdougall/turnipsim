@@ -6,9 +6,13 @@ extends RefCounted
 ## Dice rolls are injected via parameters for deterministic testing.
 ## No mutation of input state — always return new state via cloning.
 ##
-## Combat follows Turnip28 v17 rules:
-##   Shooting: 1 attack per model → Inaccuracy roll (I+) → Vulnerability save (V+)
-##   Melee:    A attacks per model → Inaccuracy roll (I+) → Vulnerability save (V+)
+## V17 Order Sequence:
+##   1. Players alternate selecting Snobs to "Make Ready"
+##   2. Snob orders a Follower in command range (or itself)
+##   3. Blunder check (D6, on 1 = blunder + panic token)
+##   4. Execute order (Volley Fire, Move & Shoot, March, Charge)
+##   5. After all Snobs ordered, unordered Followers order themselves
+##   6. Round ends, advance to next round
 
 # Board constants
 const BOARD_WIDTH: int = 48
@@ -124,6 +128,7 @@ static func confirm_placement(state: Types.GameState) -> Types.EngineResult:
 
 	if other_player_done:
 		new_state.phase = "orders"
+		new_state.order_phase = "snob_select"
 		new_state.active_seat = new_state.initiative_seat
 		new_state.action_log.append({
 			"round": state.current_round,
@@ -146,438 +151,717 @@ static func confirm_placement(state: Types.GameState) -> Types.EngineResult:
 
 
 # =============================================================================
-# ORDERS PHASE
+# ORDERS PHASE — V17 ORDER SEQUENCE
 # =============================================================================
 
-## Move a unit to a new position.
-static func move_unit(state: Types.GameState, unit_id: String, x: int, y: int) -> Types.EngineResult:
+## Step 1: Select a Snob to Make Ready.
+static func select_snob(state: Types.GameState, snob_id: String) -> Types.EngineResult:
 	var result = Types.EngineResult.new()
 
 	if state.phase != "orders":
 		result.error = "Not in orders phase"
 		return result
-
-	var unit: Types.UnitState = null
-	for u in state.units:
-		if u.id == unit_id:
-			unit = u
-			break
-
-	if not unit:
-		result.error = "Unit not found"
+	if state.order_phase != "snob_select":
+		result.error = "Not in snob selection phase (current: %s)" % state.order_phase
 		return result
 
-	if unit.owner_seat != state.active_seat:
-		result.error = "Not your unit"
+	var snob = _find_unit(state, snob_id)
+	if not snob:
+		result.error = "Snob not found"
 		return result
-
-	if unit.has_activated:
-		result.error = "Unit already activated this round"
+	if not snob.is_snob():
+		result.error = "Unit is not a Snob"
 		return result
-
-	if unit.is_dead:
-		result.error = "Unit is dead"
+	if snob.owner_seat != state.active_seat:
+		result.error = "Not your Snob"
 		return result
-
-	if x < 0 or x >= BOARD_WIDTH or y < 0 or y >= BOARD_HEIGHT:
-		result.error = "Coordinates out of bounds"
+	if snob.is_dead:
+		result.error = "Snob is dead"
 		return result
-
-	for u in state.units:
-		if not u.is_dead and u.x == x and u.y == y:
-			result.error = "Position occupied"
-			return result
-
-	# Movement range check (Manhattan distance, 1 cell = 1 inch)
-	var distance = abs(x - unit.x) + abs(y - unit.y)
-	if distance > unit.base_stats.movement:
-		result.error = "Out of movement range (max %d)" % unit.base_stats.movement
+	if snob.has_ordered:
+		result.error = "Snob already ordered this round"
 		return result
 
 	var new_state = _clone_state(state)
-
-	for u in new_state.units:
-		if u.id == unit_id:
-			u.x = x
-			u.y = y
-			break
+	new_state.order_phase = "order_declare"
+	new_state.current_snob_id = snob_id
 
 	new_state.action_log.append({
 		"round": state.current_round,
 		"seat": state.active_seat,
-		"action": "move",
-		"unit_id": unit_id,
-		"unit_type": unit.unit_type,
-		"from_x": unit.x,
-		"from_y": unit.y,
-		"to_x": x,
-		"to_y": y
+		"action": "select_snob",
+		"snob_id": snob_id,
+		"snob_type": snob.unit_type
 	})
 
 	result.success = true
 	result.new_state = new_state
-	result.description = "%s moved to (%d, %d)" % [unit.unit_type, x, y]
+	result.description = "%s Made Ready" % snob.unit_type
 
 	return result
 
 
-## Resolve a shooting engagement.
-## dice_results: Array of D6 rolls — need (model_count) inaccuracy dice + (hits) vulnerability dice
-## For simplicity, pass all dice upfront: [inaccuracy_1, ..., inaccuracy_N, vuln_1, ..., vuln_N]
-## where N = attacker.model_count. Extra vuln dice are ignored if not needed.
-static func resolve_shoot(state: Types.GameState, attacker_id: String, target_id: String, dice_results: Array) -> Types.EngineResult:
+## Step 2: Declare an order for a unit.
+## unit_id: the Follower to order (or the Snob itself)
+## order_type: "volley_fire", "move_and_shoot", "march", "charge"
+## blunder_die: D6 roll for blunder check (1 = blunder)
+## move_dice: Array of D6 rolls for march/charge bonus movement [d1, d2]
+static func declare_order(state: Types.GameState, unit_id: String, order_type: String, blunder_die: int, move_dice: Array) -> Types.EngineResult:
 	var result = Types.EngineResult.new()
 
 	if state.phase != "orders":
 		result.error = "Not in orders phase"
 		return result
-
-	var attacker: Types.UnitState = null
-	var target: Types.UnitState = null
-
-	for u in state.units:
-		if u.id == attacker_id:
-			attacker = u
-		if u.id == target_id:
-			target = u
-
-	if not attacker:
-		result.error = "Attacker not found"
+	if state.order_phase != "order_declare":
+		result.error = "Not in order declaration phase"
 		return result
-	if not target:
-		result.error = "Target not found"
+
+	var snob = _find_unit(state, state.current_snob_id)
+	if not snob:
+		result.error = "Current Snob not found"
 		return result
-	if attacker.owner_seat != state.active_seat:
+
+	var unit = _find_unit(state, unit_id)
+	if not unit:
+		result.error = "Unit not found"
+		return result
+	if unit.owner_seat != state.active_seat:
 		result.error = "Not your unit"
 		return result
-	if attacker.has_activated:
-		result.error = "Unit already activated"
+	if unit.is_dead:
+		result.error = "Unit is dead"
 		return result
-	if attacker.is_dead or target.is_dead:
-		result.error = "Dead unit cannot attack or be attacked"
-		return result
-	if target.owner_seat == attacker.owner_seat:
-		result.error = "Cannot attack your own units"
+	if unit.has_ordered:
+		result.error = "Unit already ordered this round"
 		return result
 
-	# Must have ranged weapon (weapon_range > 0) and no powder smoke
-	if attacker.base_stats.weapon_range <= 0:
-		result.error = "Unit has no ranged weapon"
-		return result
-	if attacker.has_powder_smoke:
-		result.error = "Unit has powder smoke — cannot shoot"
-		return result
+	var ordering_self = (unit_id == state.current_snob_id)
 
-	# Range check
-	var distance = abs(target.x - attacker.x) + abs(target.y - attacker.y)
-	if distance > attacker.base_stats.weapon_range:
-		result.error = "Target out of range (max %d)" % attacker.base_stats.weapon_range
-		return result
+	# Command range check (skip if ordering self)
+	if not ordering_self:
+		if unit.is_snob():
+			result.error = "Cannot order another Snob"
+			return result
+		var distance = abs(unit.x - snob.x) + abs(unit.y - snob.y)
+		if distance > snob.get_command_range():
+			result.error = "Unit out of command range (%d > %d)" % [distance, snob.get_command_range()]
+			return result
 
-	# Turnip28 shooting: 1 attack per model in the unit
-	var num_attacks = attacker.model_count
-	var needed_dice = num_attacks * 2  # inaccuracy + vulnerability for each
-	if dice_results.size() < needed_dice:
-		result.error = "Not enough dice (need %d, got %d)" % [needed_dice, dice_results.size()]
+	# Validate order type
+	if order_type not in ["volley_fire", "move_and_shoot", "march", "charge"]:
+		result.error = "Invalid order type: " + order_type
 		return result
 
-	var inaccuracy = attacker.base_stats.inaccuracy
-	var vulnerability = target.base_stats.vulnerability
+	# Validate order is legal for unit
+	if order_type == "volley_fire" and unit.base_stats.weapon_range <= 0:
+		result.error = "Cannot Volley Fire without ranged weapon"
+		return result
+	if order_type == "volley_fire" and unit.has_powder_smoke:
+		result.error = "Cannot Volley Fire with powder smoke"
+		return result
+	if order_type == "move_and_shoot" and unit.base_stats.weapon_range <= 0:
+		result.error = "Cannot Move and Shoot without ranged weapon"
+		return result
+	if order_type == "move_and_shoot" and unit.has_powder_smoke:
+		result.error = "Cannot Move and Shoot with powder smoke"
+		return result
+	if order_type in ["march", "charge"] and "immobile" in unit.special_rules:
+		result.error = "Immobile unit cannot %s" % order_type
+		return result
 
-	# Equipment modifiers
-	if attacker.equipment == "missile":
-		# Missile weapons reduce target's V by 2 (making it easier to wound)
-		vulnerability = maxi(vulnerability - 2, 2)
-
-	var hits: int = 0
-	var saves: int = 0
-	var unsaved_wounds: int = 0
-	var hit_details: Array = []
-
-	for i in range(num_attacks):
-		var inac_roll = dice_results[i]
-		var vuln_roll = dice_results[num_attacks + i]
-		var hit = inac_roll >= inaccuracy
-		var saved = false
-
-		if hit:
-			hits += 1
-			saved = vuln_roll >= vulnerability
-			if saved:
-				saves += 1
-			else:
-				unsaved_wounds += 1
-
-		hit_details.append({
-			"inaccuracy_roll": inac_roll,
-			"hit": hit,
-			"vulnerability_roll": vuln_roll if hit else 0,
-			"saved": saved
-		})
-
-	# Apply wounds to target (remove models)
 	var new_state = _clone_state(state)
-	var new_attacker: Types.UnitState = null
-	var new_target: Types.UnitState = null
 
-	for u in new_state.units:
-		if u.id == attacker_id:
-			new_attacker = u
-		if u.id == target_id:
-			new_target = u
+	# Blunder check: Snobs ordering themselves never blunder
+	var blundered = false
+	if not ordering_self and blunder_die == 1:
+		blundered = true
+		var new_unit = _find_unit_in(new_state, unit_id)
+		new_unit.panic_tokens = mini(new_unit.panic_tokens + 1, 6)
 
-	new_attacker.has_activated = true
+	new_state.order_phase = "order_execute"
+	new_state.current_order_unit_id = unit_id
+	new_state.current_order_type = order_type
+	new_state.current_order_blundered = blundered
 
-	# Black powder generates powder smoke
-	if attacker.equipment == "black_powder":
-		new_attacker.has_powder_smoke = true
+	# Compute move bonus for march/charge (stored so client can show range).
+	# Also for blundered move_and_shoot, since _execute_move_and_shoot reads
+	# move_bonus as the capped movement (1D6) when blundered.
+	var move_bonus = 0
+	if order_type in ["march", "charge"]:
+		if move_dice.size() >= 2:
+			move_bonus = move_dice[0] + move_dice[1] if not blundered else move_dice[0]
+		elif move_dice.size() >= 1:
+			move_bonus = move_dice[0]
+	elif order_type == "move_and_shoot" and blundered:
+		if move_dice.size() >= 1:
+			move_bonus = move_dice[0]
+	new_state.current_order_move_bonus = move_bonus
 
-	# Apply wounds — each unsaved wound kills one 1W model or chips multi-wound models
-	_apply_wounds(new_target, unsaved_wounds)
-
-	# Any hit (even saved) gives target a panic token
-	if hits > 0 and new_target.panic_tokens < 6:
-		new_target.panic_tokens = mini(new_target.panic_tokens + 1, 6)
-
+	var blunder_text = " [BLUNDERED!]" if blundered else ""
 	new_state.action_log.append({
 		"round": state.current_round,
 		"seat": state.active_seat,
-		"action": "shoot",
-		"attacker_id": attacker_id,
-		"attacker_type": attacker.unit_type,
-		"target_id": target_id,
-		"target_type": target.unit_type,
-		"num_attacks": num_attacks,
-		"inaccuracy_needed": inaccuracy,
-		"vulnerability_needed": vulnerability,
-		"hits": hits,
-		"saves": saves,
-		"unsaved_wounds": unsaved_wounds,
-		"models_remaining": new_target.model_count,
-		"target_killed": new_target.is_dead,
-		"details": hit_details
+		"action": "declare_order",
+		"unit_id": unit_id,
+		"unit_type": unit.unit_type,
+		"order_type": order_type,
+		"blundered": blundered,
+		"blunder_die": blunder_die,
+		"move_bonus": move_bonus
 	})
 
 	result.success = true
 	result.new_state = new_state
-	result.dice_rolled = dice_results
-	result.description = "%s shot %s (%d attacks, %d hits, %d saved, %d wounds)%s" % [
-		attacker.unit_type, target.unit_type,
-		num_attacks, hits, saves, unsaved_wounds,
-		" [DESTROYED]" if new_target.is_dead else " [%d models left]" % new_target.model_count
+	result.dice_rolled = [blunder_die] + move_dice
+	result.description = "%s ordered to %s%s (move bonus: +%d)" % [
+		unit.unit_type, order_type.replace("_", " ").capitalize(), blunder_text, move_bonus
 	]
 
 	return result
 
 
-## Resolve a melee charge.
-## dice_results: Array of D6 rolls — need (total_attacks) inaccuracy dice + (total_attacks) vulnerability dice
-## total_attacks = model_count * attacks_per_model
-static func resolve_charge(state: Types.GameState, attacker_id: String, target_id: String, dice_results: Array) -> Types.EngineResult:
+## Step 2b: Declare a self-order for an unordered Follower (follower_self_order phase).
+## Same as declare_order but no snob, always blunder-checks.
+static func declare_self_order(state: Types.GameState, unit_id: String, order_type: String, blunder_die: int, move_dice: Array) -> Types.EngineResult:
 	var result = Types.EngineResult.new()
 
 	if state.phase != "orders":
 		result.error = "Not in orders phase"
 		return result
+	if state.order_phase != "follower_self_order":
+		result.error = "Not in follower self-order phase"
+		return result
 
-	var attacker: Types.UnitState = null
-	var target: Types.UnitState = null
-
-	for u in state.units:
-		if u.id == attacker_id:
-			attacker = u
-		if u.id == target_id:
-			target = u
-
-	if not attacker or not target:
+	var unit = _find_unit(state, unit_id)
+	if not unit:
 		result.error = "Unit not found"
 		return result
-	if attacker.owner_seat != state.active_seat:
+	if unit.owner_seat != state.active_seat:
 		result.error = "Not your unit"
 		return result
-	if attacker.has_activated:
-		result.error = "Unit already activated"
+	if unit.is_dead:
+		result.error = "Unit is dead"
 		return result
-	if attacker.is_dead or target.is_dead:
-		result.error = "Dead unit cannot attack"
+	if unit.has_ordered:
+		result.error = "Unit already ordered this round"
 		return result
-	if target.owner_seat == attacker.owner_seat:
-		result.error = "Cannot attack your own units"
-		return result
-
-	# Must be adjacent (distance = 1)
-	var distance = abs(target.x - attacker.x) + abs(target.y - attacker.y)
-	if distance != 1:
-		result.error = "Target not adjacent (must be 1 cell away)"
+	if unit.is_snob():
+		result.error = "Snobs don't self-order"
 		return result
 
-	# Turnip28 melee: A attacks per model
+	# Validate order type
+	if order_type not in ["volley_fire", "move_and_shoot", "march", "charge"]:
+		result.error = "Invalid order type: " + order_type
+		return result
+	if order_type == "volley_fire" and (unit.base_stats.weapon_range <= 0 or unit.has_powder_smoke):
+		result.error = "Cannot Volley Fire"
+		return result
+	if order_type == "move_and_shoot" and (unit.base_stats.weapon_range <= 0 or unit.has_powder_smoke):
+		result.error = "Cannot Move and Shoot"
+		return result
+	if order_type in ["march", "charge"] and "immobile" in unit.special_rules:
+		result.error = "Immobile unit cannot %s" % order_type
+		return result
+
+	var new_state = _clone_state(state)
+
+	# Always blunder check for self-ordering followers
+	var blundered = (blunder_die == 1)
+	if blundered:
+		var new_unit = _find_unit_in(new_state, unit_id)
+		new_unit.panic_tokens = mini(new_unit.panic_tokens + 1, 6)
+
+	new_state.order_phase = "order_execute"
+	new_state.current_snob_id = ""  # No snob commanding
+	new_state.current_order_unit_id = unit_id
+	new_state.current_order_type = order_type
+	new_state.current_order_blundered = blundered
+
+	var move_bonus = 0
+	if order_type in ["march", "charge"]:
+		if move_dice.size() >= 2:
+			move_bonus = move_dice[0] + move_dice[1] if not blundered else move_dice[0]
+		elif move_dice.size() >= 1:
+			move_bonus = move_dice[0]
+	elif order_type == "move_and_shoot" and blundered:
+		if move_dice.size() >= 1:
+			move_bonus = move_dice[0]
+	new_state.current_order_move_bonus = move_bonus
+
+	new_state.action_log.append({
+		"round": state.current_round,
+		"seat": state.active_seat,
+		"action": "declare_self_order",
+		"unit_id": unit_id,
+		"unit_type": unit.unit_type,
+		"order_type": order_type,
+		"blundered": blundered,
+		"blunder_die": blunder_die,
+		"move_bonus": move_bonus
+	})
+
+	result.success = true
+	result.new_state = new_state
+	result.dice_rolled = [blunder_die] + move_dice
+	var blunder_text = " [BLUNDERED!]" if blundered else ""
+	result.description = "%s self-orders %s%s" % [
+		unit.unit_type, order_type.replace("_", " ").capitalize(), blunder_text
+	]
+
+	return result
+
+
+## Step 3: Execute the declared order.
+## params: Dictionary with order-specific parameters:
+##   volley_fire:    { "target_id": String }
+##   move_and_shoot: { "x": int, "y": int, "target_id": String }
+##   march:          { "x": int, "y": int }
+##   charge:         { "target_id": String }
+## dice_results: Array of D6 rolls for combat resolution
+static func execute_order(state: Types.GameState, params: Dictionary, dice_results: Array) -> Types.EngineResult:
+	var result = Types.EngineResult.new()
+
+	if state.phase != "orders":
+		result.error = "Not in orders phase"
+		return result
+	if state.order_phase != "order_execute":
+		result.error = "Not in order execution phase"
+		return result
+
+	var unit = _find_unit(state, state.current_order_unit_id)
+	if not unit:
+		result.error = "Ordered unit not found"
+		return result
+
+	match state.current_order_type:
+		"volley_fire":
+			return _execute_volley_fire(state, unit, params, dice_results)
+		"move_and_shoot":
+			return _execute_move_and_shoot(state, unit, params, dice_results)
+		"march":
+			return _execute_march(state, unit, params)
+		"charge":
+			return _execute_charge(state, unit, params, dice_results)
+		_:
+			result.error = "Unknown order type: " + state.current_order_type
+			return result
+
+
+# =============================================================================
+# ORDER EXECUTION
+# =============================================================================
+
+static func _execute_volley_fire(state: Types.GameState, unit: Types.UnitState, params: Dictionary, dice_results: Array) -> Types.EngineResult:
+	var result = Types.EngineResult.new()
+
+	var target_id = params.get("target_id", "")
+	var target = _find_unit(state, target_id)
+	if not target:
+		result.error = "Target not found"
+		return result
+	if target.is_dead:
+		result.error = "Target is dead"
+		return result
+	if target.owner_seat == unit.owner_seat:
+		result.error = "Cannot target your own units"
+		return result
+
+	# Range check
+	var distance = abs(target.x - unit.x) + abs(target.y - unit.y)
+	if distance > unit.base_stats.weapon_range:
+		result.error = "Target out of range (max %d)" % unit.base_stats.weapon_range
+		return result
+
+	# Volley Fire gives -1 Inaccuracy bonus (unless blundered)
+	var inaccuracy_mod = -1 if not state.current_order_blundered else 0
+
+	var new_state = _clone_state(state)
+	var new_unit = _find_unit_in(new_state, unit.id)
+	var new_target = _find_unit_in(new_state, target_id)
+
+	var combat = _resolve_shooting(new_unit, new_target, dice_results, inaccuracy_mod)
+	if combat["error"] != "":
+		result.error = combat["error"]
+		return result
+
+	_advance_after_order(new_state)
+
+	new_state.action_log.append({
+		"round": state.current_round,
+		"seat": state.active_seat,
+		"action": "volley_fire",
+		"unit_id": unit.id,
+		"unit_type": unit.unit_type,
+		"target_id": target_id,
+		"target_type": target.unit_type,
+		"blundered": state.current_order_blundered,
+		"hits": combat["hits"],
+		"saves": combat["saves"],
+		"unsaved_wounds": combat["unsaved_wounds"]
+	})
+
+	result.success = true
+	result.new_state = new_state
+	result.dice_rolled = dice_results
+	var blunder_text = " (blundered, no bonus)" if state.current_order_blundered else " (-1 Inaccuracy)"
+	result.description = "Volley Fire! %s → %s%s (%d hits, %d saved, %d wounds)%s" % [
+		unit.unit_type, target.unit_type, blunder_text,
+		combat["hits"], combat["saves"], combat["unsaved_wounds"],
+		" [DESTROYED]" if new_target.is_dead else ""
+	]
+
+	return result
+
+
+static func _execute_move_and_shoot(state: Types.GameState, unit: Types.UnitState, params: Dictionary, dice_results: Array) -> Types.EngineResult:
+	var result = Types.EngineResult.new()
+
+	var x = params.get("x", -1)
+	var y = params.get("y", -1)
+	var target_id = params.get("target_id", "")
+
+	# Movement validation
+	var move_error = _validate_move(state, unit, x, y)
+	if move_error != "":
+		result.error = move_error
+		return result
+
+	# Movement range: M normally, blunder_move_bonus (from move_dice[0]) if blundered
+	var max_move = unit.base_stats.movement
+	if state.current_order_blundered:
+		max_move = state.current_order_move_bonus  # D6 result stored during declare
+	var distance = abs(x - unit.x) + abs(y - unit.y)
+	if distance > max_move:
+		result.error = "Out of movement range (max %d)" % max_move
+		return result
+
+	var new_state = _clone_state(state)
+	var new_unit = _find_unit_in(new_state, unit.id)
+
+	# Move the unit
+	new_unit.x = x
+	new_unit.y = y
+
+	# Shoot target (if provided and able)
+	var combat = {"hits": 0, "saves": 0, "unsaved_wounds": 0, "error": ""}
+	var new_target: Types.UnitState = null
+	if target_id != "":
+		new_target = _find_unit_in(new_state, target_id)
+		if new_target and not new_target.is_dead and new_target.owner_seat != unit.owner_seat:
+			# Check range from new position
+			var shoot_dist = abs(new_target.x - x) + abs(new_target.y - y)
+			if shoot_dist <= new_unit.base_stats.weapon_range and not new_unit.has_powder_smoke:
+				combat = _resolve_shooting(new_unit, new_target, dice_results, 0)
+
+	_advance_after_order(new_state)
+
+	new_state.action_log.append({
+		"round": state.current_round,
+		"seat": state.active_seat,
+		"action": "move_and_shoot",
+		"unit_id": unit.id,
+		"unit_type": unit.unit_type,
+		"from_x": unit.x, "from_y": unit.y,
+		"to_x": x, "to_y": y,
+		"target_id": target_id,
+		"blundered": state.current_order_blundered,
+		"hits": combat["hits"],
+		"unsaved_wounds": combat["unsaved_wounds"]
+	})
+
+	result.success = true
+	result.new_state = new_state
+	result.dice_rolled = dice_results
+	var shoot_text = ""
+	if target_id != "" and combat["hits"] > 0:
+		shoot_text = " → shot %s (%d hits, %d wounds)" % [
+			new_target.unit_type if new_target else "?", combat["hits"], combat["unsaved_wounds"]
+		]
+	result.description = "Move & Shoot! %s to (%d,%d)%s" % [unit.unit_type, x, y, shoot_text]
+
+	return result
+
+
+static func _execute_march(state: Types.GameState, unit: Types.UnitState, params: Dictionary) -> Types.EngineResult:
+	var result = Types.EngineResult.new()
+
+	var x = params.get("x", -1)
+	var y = params.get("y", -1)
+
+	var move_error = _validate_move(state, unit, x, y)
+	if move_error != "":
+		result.error = move_error
+		return result
+
+	# March range: M + move_bonus (2D6 or 1D6 if blundered)
+	var max_move = unit.base_stats.movement + state.current_order_move_bonus
+	var distance = abs(x - unit.x) + abs(y - unit.y)
+	if distance > max_move:
+		result.error = "Out of march range (max %d = M%d + %d)" % [max_move, unit.base_stats.movement, state.current_order_move_bonus]
+		return result
+
+	var new_state = _clone_state(state)
+	var new_unit = _find_unit_in(new_state, unit.id)
+	new_unit.x = x
+	new_unit.y = y
+
+	_advance_after_order(new_state)
+
+	new_state.action_log.append({
+		"round": state.current_round,
+		"seat": state.active_seat,
+		"action": "march",
+		"unit_id": unit.id,
+		"unit_type": unit.unit_type,
+		"from_x": unit.x, "from_y": unit.y,
+		"to_x": x, "to_y": y,
+		"move_bonus": state.current_order_move_bonus,
+		"blundered": state.current_order_blundered
+	})
+
+	result.success = true
+	result.new_state = new_state
+	result.description = "March! %s to (%d,%d) (M%d + %d)" % [
+		unit.unit_type, x, y, unit.base_stats.movement, state.current_order_move_bonus
+	]
+
+	return result
+
+
+static func _execute_charge(state: Types.GameState, unit: Types.UnitState, params: Dictionary, dice_results: Array) -> Types.EngineResult:
+	var result = Types.EngineResult.new()
+
+	var target_id = params.get("target_id", "")
+	var target = _find_unit(state, target_id)
+	if not target:
+		result.error = "Target not found"
+		return result
+	if target.is_dead:
+		result.error = "Target is dead"
+		return result
+	if target.owner_seat == unit.owner_seat:
+		result.error = "Cannot charge your own units"
+		return result
+
+	# Charge range: M + move_bonus. Must end adjacent (distance = 1) to target.
+	var charge_range = unit.base_stats.movement + state.current_order_move_bonus
+	var target_distance = abs(target.x - unit.x) + abs(target.y - unit.y)
+	if target_distance > charge_range:
+		result.error = "Target out of charge range (distance %d, max %d)" % [target_distance, charge_range]
+		return result
+
+	# Find an adjacent cell to the target to move to
+	var charge_dest = _find_adjacent_cell(state, unit, target)
+	if charge_dest.x == -1:
+		result.error = "No open cell adjacent to target"
+		return result
+
+	# Verify the adjacent cell is within charge range
+	var move_distance = abs(charge_dest.x - unit.x) + abs(charge_dest.y - unit.y)
+	if move_distance > charge_range:
+		result.error = "Cannot reach target (need %d, have %d)" % [move_distance, charge_range]
+		return result
+
+	var new_state = _clone_state(state)
+	var new_unit = _find_unit_in(new_state, unit.id)
+	var new_target = _find_unit_in(new_state, target_id)
+
+	# Move to adjacent cell
+	new_unit.x = charge_dest.x
+	new_unit.y = charge_dest.y
+
+	# Resolve melee
+	var combat = _resolve_melee(new_unit, new_target, dice_results)
+	if combat["error"] != "":
+		result.error = combat["error"]
+		return result
+
+	_advance_after_order(new_state)
+
+	new_state.action_log.append({
+		"round": state.current_round,
+		"seat": state.active_seat,
+		"action": "charge",
+		"unit_id": unit.id,
+		"unit_type": unit.unit_type,
+		"target_id": target_id,
+		"target_type": target.unit_type,
+		"charge_range": charge_range,
+		"blundered": state.current_order_blundered,
+		"hits": combat["hits"],
+		"saves": combat["saves"],
+		"unsaved_wounds": combat["unsaved_wounds"]
+	})
+
+	result.success = true
+	result.new_state = new_state
+	result.dice_rolled = dice_results
+	result.description = "Charge! %s → %s (%d hits, %d saved, %d wounds)%s" % [
+		unit.unit_type, target.unit_type,
+		combat["hits"], combat["saves"], combat["unsaved_wounds"],
+		" [DESTROYED]" if new_target.is_dead else ""
+	]
+
+	return result
+
+
+# =============================================================================
+# ORDER FLOW MANAGEMENT
+# =============================================================================
+
+## After an order is fully executed, advance the state machine.
+## Marks units as ordered, switches players, transitions phases.
+static func _advance_after_order(state: Types.GameState) -> void:
+	# Mark the ordered unit
+	var unit = _find_unit_in(state, state.current_order_unit_id)
+	if unit:
+		unit.has_ordered = true
+
+	# Mark the snob (if one was commanding)
+	if state.current_snob_id != "":
+		var snob = _find_unit_in(state, state.current_snob_id)
+		if snob:
+			snob.has_ordered = true
+
+	# Clear current order tracking
+	state.current_snob_id = ""
+	state.current_order_unit_id = ""
+	state.current_order_type = ""
+	state.current_order_blundered = false
+	state.current_order_move_bonus = 0
+
+	# Determine next phase
+	var seat1_has_unordered_snobs = _has_unordered_snobs(state, 1)
+	var seat2_has_unordered_snobs = _has_unordered_snobs(state, 2)
+
+	if seat1_has_unordered_snobs or seat2_has_unordered_snobs:
+		# More snobs to order — switch to other player if they have snobs
+		var other_seat = 3 - state.active_seat
+		if _has_unordered_snobs(state, other_seat):
+			state.active_seat = other_seat
+		# else: current player continues (opponent has no unordered snobs)
+		state.order_phase = "snob_select"
+	else:
+		# All snobs have ordered — check for unordered followers
+		var seat1_has_unordered_followers = _has_unordered_followers(state, 1)
+		var seat2_has_unordered_followers = _has_unordered_followers(state, 2)
+
+		if seat1_has_unordered_followers or seat2_has_unordered_followers:
+			state.order_phase = "follower_self_order"
+			# Initiative player's unordered followers go first
+			if _has_unordered_followers(state, state.initiative_seat):
+				state.active_seat = state.initiative_seat
+			else:
+				state.active_seat = 3 - state.initiative_seat
+		else:
+			# All units ordered — end the round
+			_end_round(state)
+
+
+## End the current round: reset flags, advance round counter.
+static func _end_round(state: Types.GameState) -> void:
+	# Clear all has_ordered flags
+	for unit in state.units:
+		unit.has_ordered = false
+
+	# Clear powder smoke at start of new round
+	for unit in state.units:
+		unit.has_powder_smoke = false
+
+	state.current_round += 1
+
+	if state.current_round > state.max_rounds:
+		state.phase = "finished"
+		state.order_phase = ""
+	else:
+		state.order_phase = "snob_select"
+		state.active_seat = state.initiative_seat
+
+	state.action_log.append({
+		"round": state.current_round - 1,
+		"action": "round_ended"
+	})
+
+
+# =============================================================================
+# COMBAT RESOLUTION HELPERS
+# =============================================================================
+
+## Resolve a shooting engagement. Modifies new_attacker and new_target in place.
+## Returns { hits, saves, unsaved_wounds, error }
+static func _resolve_shooting(attacker: Types.UnitState, target: Types.UnitState, dice_results: Array, inaccuracy_mod: int) -> Dictionary:
+	var num_attacks = attacker.model_count
+	var needed_dice = num_attacks * 2
+	if dice_results.size() < needed_dice:
+		return {"hits": 0, "saves": 0, "unsaved_wounds": 0, "error": "Not enough dice (need %d, got %d)" % [needed_dice, dice_results.size()]}
+
+	var inaccuracy = maxi(attacker.base_stats.inaccuracy + inaccuracy_mod, 2)
+	var vulnerability = target.base_stats.vulnerability
+
+	# Equipment modifiers
+	if attacker.equipment == "missile":
+		vulnerability = maxi(vulnerability - 2, 2)
+
+	var hits = 0
+	var saves = 0
+	var unsaved_wounds = 0
+
+	for i in range(num_attacks):
+		var inac_roll = dice_results[i]
+		var vuln_roll = dice_results[num_attacks + i]
+		if inac_roll >= inaccuracy:
+			hits += 1
+			if vuln_roll >= vulnerability:
+				saves += 1
+			else:
+				unsaved_wounds += 1
+
+	# Apply wounds
+	_apply_wounds(target, unsaved_wounds)
+
+	# Any hit gives target a panic token
+	if hits > 0:
+		target.panic_tokens = mini(target.panic_tokens + 1, 6)
+
+	# Black powder gives powder smoke
+	if attacker.equipment == "black_powder":
+		attacker.has_powder_smoke = true
+
+	return {"hits": hits, "saves": saves, "unsaved_wounds": unsaved_wounds, "error": ""}
+
+
+## Resolve a melee engagement. Modifies new_attacker and new_target in place.
+static func _resolve_melee(attacker: Types.UnitState, target: Types.UnitState, dice_results: Array) -> Dictionary:
 	var attacks_per_model = attacker.base_stats.attacks
 	var inaccuracy = attacker.base_stats.inaccuracy
 	var vulnerability = target.base_stats.vulnerability
 
-	# Close combat weapons reduce inaccuracy by 1
+	# Close combat equipment reduces inaccuracy by 1
 	if attacker.equipment == "close_combat":
 		inaccuracy = maxi(inaccuracy - 1, 2)
 
 	var num_attacks = attacker.model_count * attacks_per_model
 	var needed_dice = num_attacks * 2
 	if dice_results.size() < needed_dice:
-		result.error = "Not enough dice (need %d, got %d)" % [needed_dice, dice_results.size()]
-		return result
+		return {"hits": 0, "saves": 0, "unsaved_wounds": 0, "error": "Not enough dice (need %d, got %d)" % [needed_dice, dice_results.size()]}
 
-	var hits: int = 0
-	var saves: int = 0
-	var unsaved_wounds: int = 0
+	var hits = 0
+	var saves = 0
+	var unsaved_wounds = 0
 
 	for i in range(num_attacks):
 		var inac_roll = dice_results[i]
 		var vuln_roll = dice_results[num_attacks + i]
-		var hit = inac_roll >= inaccuracy
-
-		if hit:
+		if inac_roll >= inaccuracy:
 			hits += 1
-			var saved = vuln_roll >= vulnerability
-			if saved:
+			if vuln_roll >= vulnerability:
 				saves += 1
 			else:
 				unsaved_wounds += 1
 
-	var new_state = _clone_state(state)
-	var new_attacker: Types.UnitState = null
-	var new_target: Types.UnitState = null
+	_apply_wounds(target, unsaved_wounds)
 
-	for u in new_state.units:
-		if u.id == attacker_id:
-			new_attacker = u
-		if u.id == target_id:
-			new_target = u
-
-	new_attacker.has_activated = true
-	_apply_wounds(new_target, unsaved_wounds)
-
-	new_state.action_log.append({
-		"round": state.current_round,
-		"seat": state.active_seat,
-		"action": "charge",
-		"attacker_id": attacker_id,
-		"attacker_type": attacker.unit_type,
-		"target_id": target_id,
-		"target_type": target.unit_type,
-		"num_attacks": num_attacks,
-		"inaccuracy_needed": inaccuracy,
-		"vulnerability_needed": vulnerability,
-		"hits": hits,
-		"saves": saves,
-		"unsaved_wounds": unsaved_wounds,
-		"models_remaining": new_target.model_count,
-		"target_killed": new_target.is_dead
-	})
-
-	result.success = true
-	result.new_state = new_state
-	result.dice_rolled = dice_results
-	result.description = "%s charged %s (%d attacks, %d hits, %d saved, %d wounds)%s" % [
-		attacker.unit_type, target.unit_type,
-		num_attacks, hits, saves, unsaved_wounds,
-		" [DESTROYED]" if new_target.is_dead else " [%d models left]" % new_target.model_count
-	]
-
-	return result
-
-
-## End activation for a unit (used when unit moves but doesn't attack).
-static func end_activation(state: Types.GameState, unit_id: String) -> Types.EngineResult:
-	var result = Types.EngineResult.new()
-
-	if state.phase != "orders":
-		result.error = "Not in orders phase"
-		return result
-
-	var unit: Types.UnitState = null
-	for u in state.units:
-		if u.id == unit_id:
-			unit = u
-			break
-
-	if not unit:
-		result.error = "Unit not found"
-		return result
-	if unit.owner_seat != state.active_seat:
-		result.error = "Not your unit"
-		return result
-	if unit.has_activated:
-		result.error = "Unit already activated"
-		return result
-
-	var new_state = _clone_state(state)
-
-	for u in new_state.units:
-		if u.id == unit_id:
-			u.has_activated = true
-			break
-
-	new_state.action_log.append({
-		"round": state.current_round,
-		"seat": state.active_seat,
-		"action": "end_activation",
-		"unit_id": unit_id,
-		"unit_type": unit.unit_type
-	})
-
-	result.success = true
-	result.new_state = new_state
-	result.description = "%s ended activation" % unit.unit_type
-
-	return result
-
-
-## End the current turn. Switches to other player or advances round.
-static func end_turn(state: Types.GameState) -> Types.EngineResult:
-	var result = Types.EngineResult.new()
-
-	if state.phase != "orders":
-		result.error = "Not in orders phase"
-		return result
-
-	for unit in state.units:
-		if unit.owner_seat == state.active_seat and not unit.is_dead and not unit.has_activated:
-			result.error = "You have unactivated units"
-			return result
-
-	var new_state = _clone_state(state)
-
-	var other_seat = 3 - state.active_seat
-	new_state.active_seat = other_seat
-
-	# Reset activation and powder smoke for the new active player
-	for unit in new_state.units:
-		if unit.owner_seat == other_seat:
-			unit.has_activated = false
-
-	# If both players have gone, advance to next round
-	if other_seat == new_state.initiative_seat:
-		new_state.current_round += 1
-		# Clear powder smoke for all units at start of new round
-		for unit in new_state.units:
-			unit.has_powder_smoke = false
-
-		# Check if game is over (max rounds reached)
-		if new_state.current_round > new_state.max_rounds:
-			new_state.phase = "finished"
-
-	new_state.action_log.append({
-		"round": state.current_round,
-		"action": "end_turn",
-		"seat": state.active_seat,
-		"next_seat": other_seat
-	})
-
-	result.success = true
-	result.new_state = new_state
-	result.description = "Turn ended. Player %d's turn." % other_seat
-
-	return result
+	return {"hits": hits, "saves": saves, "unsaved_wounds": unsaved_wounds, "error": ""}
 
 
 # =============================================================================
@@ -585,7 +869,6 @@ static func end_turn(state: Types.GameState) -> Types.EngineResult:
 # =============================================================================
 
 ## Check for victory condition.
-## Only triggers when both sides have (or had) units — solo mode skips victory checks.
 static func check_victory(state: Types.GameState) -> Dictionary:
 	var units_total_1: int = 0
 	var units_total_2: int = 0
@@ -636,14 +919,12 @@ static func check_victory(state: Types.GameState) -> Dictionary:
 # =============================================================================
 
 ## Apply wounds to a unit, removing models as they die.
-## Follows Turnip28 wound allocation: finish killing current model before moving to next.
 static func _apply_wounds(unit: Types.UnitState, wounds: int) -> void:
 	var remaining_wounds = wounds
 	while remaining_wounds > 0 and not unit.is_dead:
 		unit.current_wounds += 1
 		remaining_wounds -= 1
 		if unit.current_wounds >= unit.base_stats.wounds:
-			# Model dies
 			unit.model_count -= 1
 			unit.current_wounds = 0
 			if unit.model_count <= 0:
@@ -654,3 +935,89 @@ static func _apply_wounds(unit: Types.UnitState, wounds: int) -> void:
 ## Deep clone a GameState.
 static func _clone_state(state: Types.GameState) -> Types.GameState:
 	return Types.GameState.from_dict(state.to_dict())
+
+
+## Find a unit by ID in a GameState (read-only).
+static func _find_unit(state: Types.GameState, unit_id: String) -> Types.UnitState:
+	for u in state.units:
+		if u.id == unit_id:
+			return u
+	return null
+
+
+## Find a unit by ID in a mutable state (for modification after clone).
+static func _find_unit_in(state: Types.GameState, unit_id: String) -> Types.UnitState:
+	for u in state.units:
+		if u.id == unit_id:
+			return u
+	return null
+
+
+## Check if a seat has any alive, unordered Snobs.
+static func _has_unordered_snobs(state: Types.GameState, seat: int) -> bool:
+	for unit in state.units:
+		if unit.owner_seat == seat and unit.is_snob() and not unit.is_dead and not unit.has_ordered:
+			return true
+	return false
+
+
+## Check if a seat has any alive, unordered non-Snob units.
+static func _has_unordered_followers(state: Types.GameState, seat: int) -> bool:
+	for unit in state.units:
+		if unit.owner_seat == seat and not unit.is_snob() and not unit.is_dead and not unit.has_ordered:
+			return true
+	return false
+
+
+## Get list of follower IDs in command range of a snob.
+static func get_followers_in_command_range(state: Types.GameState, snob_id: String) -> Array[String]:
+	var snob = _find_unit(state, snob_id)
+	if not snob or not snob.is_snob():
+		return []
+
+	var cmd_range = snob.get_command_range()
+	var result: Array[String] = []
+
+	for unit in state.units:
+		if unit.owner_seat == snob.owner_seat and not unit.is_snob() and not unit.is_dead and not unit.has_ordered:
+			var distance = abs(unit.x - snob.x) + abs(unit.y - snob.y)
+			if distance <= cmd_range:
+				result.append(unit.id)
+
+	return result
+
+
+## Validate basic movement constraints (bounds, not occupied).
+static func _validate_move(state: Types.GameState, unit: Types.UnitState, x: int, y: int) -> String:
+	if x < 0 or x >= BOARD_WIDTH or y < 0 or y >= BOARD_HEIGHT:
+		return "Coordinates out of bounds"
+	for u in state.units:
+		if not u.is_dead and u.x == x and u.y == y and u.id != unit.id:
+			return "Position occupied"
+	return ""
+
+
+## Find the best adjacent cell to a target for a charging unit.
+static func _find_adjacent_cell(state: Types.GameState, charger: Types.UnitState, target: Types.UnitState) -> Vector2i:
+	var best = Vector2i(-1, -1)
+	var best_dist = 9999
+
+	for offset in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+		var cx = target.x + offset.x
+		var cy = target.y + offset.y
+		if cx < 0 or cx >= BOARD_WIDTH or cy < 0 or cy >= BOARD_HEIGHT:
+			continue
+		# Check not occupied (except by charger itself)
+		var occupied = false
+		for u in state.units:
+			if not u.is_dead and u.x == cx and u.y == cy and u.id != charger.id:
+				occupied = true
+				break
+		if occupied:
+			continue
+		var dist = abs(cx - charger.x) + abs(cy - charger.y)
+		if dist < best_dist:
+			best_dist = dist
+			best = Vector2i(cx, cy)
+
+	return best

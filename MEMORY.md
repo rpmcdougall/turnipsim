@@ -39,7 +39,7 @@
 **Documentation:**
 - ✅ `docs/wiki/Phase-4-UI-Programmatic.md` - Programmatic UI guide
 - ✅ `docs/wiki/UI-Implementation-Verification.md` - Verification report
-- ✅ `PHASE4_TESTING.md` - Manual testing procedures
+- ✅ `docs/wiki/Manual-Testing-Guide.md` - Local multiplayer smoke-test procedure
 
 **Next:** End-to-end integration testing (2 clients + server, full game flow)
 
@@ -186,7 +186,7 @@ cd godot/
 - `CLAUDE.md` — Phase status, architecture overview
 - `turnip28-sim-plan-godot.md` — Full roadmap (Phases 0-6)
 - `CONTRIBUTING.md` — Feature branch workflow
-- `PHASE4_TESTING.md` — Manual integration test procedures
+- `docs/wiki/Manual-Testing-Guide.md` — Manual integration test procedures
 
 ### Wiki (`docs/wiki/`)
 - `Home.md` — Wiki navigation

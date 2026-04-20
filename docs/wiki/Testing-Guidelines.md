@@ -16,12 +16,14 @@ This guide covers how to write, run, and maintain tests for Turnip28 Simulator.
 
 ```
 godot/tests/
-├── test_runner.gd              # Phase 1: Game logic tests (19 tests)
-├── test_game_engine.gd         # Phase 4: Engine tests (38 tests)
+├── test_runner.gd              # Phase 1: types, ruleset, roster validation (19 tests)
+├── test_game_engine.gd         # Engine: order state machine, combat (48 tests)
 ├── test_ui_instantiate.gd      # UI scene loading tests
 ├── test_phase3_scenes.gd       # Phase 3 networking tests
 └── demo_army_roll.gd           # Manual demo (not automated)
 ```
+
+Set `GODOT` in your shell (see [Project Setup](Project-Setup.md)) so the snippets below resolve.
 
 ### Test File Template
 
@@ -79,7 +81,7 @@ func _assert_true(condition: bool, message: String) -> void:
 ### Single Test Suite
 ```bash
 cd godot/
-/Applications/Godot.app/Contents/MacOS/Godot --headless -s tests/test_runner.gd
+$GODOT --headless -s tests/test_runner.gd
 ```
 
 ### All Tests
@@ -87,16 +89,16 @@ cd godot/
 cd godot/
 
 # Phase 1 tests
-/Applications/Godot.app/Contents/MacOS/Godot --headless -s tests/test_runner.gd
+$GODOT --headless -s tests/test_runner.gd
 
 # Phase 4 engine tests
-/Applications/Godot.app/Contents/MacOS/Godot --headless -s tests/test_game_engine.gd
+$GODOT --headless -s tests/test_game_engine.gd
 
 # UI tests
-/Applications/Godot.app/Contents/MacOS/Godot --headless -s tests/test_ui_instantiate.gd
+$GODOT --headless -s tests/test_ui_instantiate.gd
 
 # Phase 3 scene tests
-/Applications/Godot.app/Contents/MacOS/Godot --headless -s tests/test_phase3_scenes.gd
+$GODOT --headless -s tests/test_phase3_scenes.gd
 ```
 
 ### CI Testing
@@ -138,24 +140,21 @@ func _test_place_unit_valid_position() -> void:
 **Example: Army roller with deterministic dice**
 
 ```gdscript
-func _test_army_roller_deterministic() -> void:
-	var ruleset = Ruleset.load("res://game/rulesets/mvp.json")
+func _test_declare_order_deterministic() -> void:
+	var state = _mock_orders_state()
+	state = GameEngine.select_snob(state, state.units[0].id).new_state
 
-	# Create deterministic dice function
-	var dice_sequence = [4, 2, 6, 3, 5, 1]
-	var dice_index = 0
-	var roll_d6 = func() -> int:
-		var result = dice_sequence[dice_index]
-		dice_index += 1
-		return result
+	# blunder_die=3 (no blunder), move_dice=[4, 2] → move_bonus = 6
+	var result = GameEngine.declare_order(
+		state, state.units[2].id, "march", 3, [4, 2]
+	)
 
-	# Roll army
-	var army = ArmyRoller.roll_army(ruleset, roll_d6)
-
-	# Assert deterministic results
-	_assert_equal(army.size(), 6, "Should roll 6 units")
-	_assert_equal(army[0].archetype, "Toff", "First unit should be leader")
+	_assert_true(result.success, "March order should be declared")
+	_assert_equal(result.new_state.current_order_move_bonus, 6,
+		"Unblundered march bonus is sum of both dice")
 ```
+
+Engine functions take dice as explicit arguments — the server rolls them and injects. This makes every test fully reproducible without mocking RNG.
 
 ### Testing Error Cases
 
@@ -178,48 +177,34 @@ func _test_place_unit_invalid_zone() -> void:
 
 ### Testing with Mock Data
 
-**Create mock state generators:**
+**Create mock state generators.** See `godot/tests/test_game_engine.gd` for a full set — the v17 stat names are M/A/I/W/V (movement, attacks, inaccuracy, wounds, vulnerability):
 
 ```gdscript
-func _mock_game_state() -> Types.GameState:
+func _mock_unit(id: String, seat: int, unit_type: String, category: String,
+		m: int, a: int, i: int, w: int, v: int, wr: int, models: int
+) -> Types.UnitState:
+	var stats = Types.Stats.new(m, a, i, w, v, wr)
+	var rules: Array[String] = []
+	return Types.UnitState.new(
+		id, seat, unit_type, category, models, models, stats, "black_powder", rules
+	)
+
+func _mock_orders_state() -> Types.GameState:
 	var state = Types.GameState.new()
-	state.room_code = "TEST01"
-	state.phase = "placement"
+	state.phase = "orders"
+	state.order_phase = "snob_select"
 	state.active_seat = 1
-	state.current_turn = 1
+	state.initiative_seat = 1
+	# 1 Snob + 1 Follower per seat at known positions
+	state.units.append(_mock_unit("u0", 1, "Toff", "snob", 6, 2, 5, 2, 5, 6, 1))
+	state.units.append(_mock_unit("u1", 2, "Toff", "snob", 6, 2, 5, 2, 5, 6, 1))
+	state.units.append(_mock_unit("u2", 1, "Fodder", "infantry", 6, 1, 6, 1, 6, 0, 12))
+	state.units.append(_mock_unit("u3", 2, "Fodder", "infantry", 6, 1, 6, 1, 6, 0, 12))
+	state.units[0].x = 10; state.units[0].y = 30
+	state.units[1].x = 10; state.units[1].y = 2
+	state.units[2].x = 12; state.units[2].y = 30
+	state.units[3].x = 12; state.units[3].y = 2
 	return state
-
-func _mock_unit_state(id: String, seat: int, x: int, y: int) -> Types.UnitState:
-	var unit = Types.UnitState.new()
-	unit.id = id
-	unit.owner_seat = seat
-	unit.x = x
-	unit.y = y
-	unit.name = "Test Unit"
-	unit.archetype = "Toff"
-
-	var stats = Types.Stats.new()
-	stats.movement = 6
-	stats.shooting = 4
-	stats.combat = 4
-	stats.resolve = 5
-	stats.wounds = 3
-	stats.save = 5
-	unit.base_stats = stats
-
-	var weapon = Types.Weapon.new()
-	weapon.name = "Musket"
-	weapon.type = "ranged"
-	weapon.range = 18
-	weapon.modifier = 0
-	unit.weapon = weapon
-
-	unit.max_wounds = 3
-	unit.current_wounds = 3
-	unit.has_activated = false
-	unit.is_dead = false
-
-	return unit
 ```
 
 ## Test Coverage Goals
@@ -230,13 +215,17 @@ func _mock_unit_state(id: String, seat: int, x: int, y: int) -> Types.UnitState:
 - [x] Mutation application
 - [x] Unit stat calculations
 
-### Phase 4: Game Engine
+### Engine (v17 order state machine)
 - [x] Placement phase (zones, bounds, occupation)
-- [x] Movement validation (distance, occupation)
-- [x] Shooting mechanics (hit/wound/save)
-- [x] Melee mechanics (adjacency, combat)
-- [x] Turn management (activation, switching)
-- [x] Victory conditions
+- [x] Snob selection (ownership, phase gating, already-ordered rejection)
+- [x] Declare order (command range, blunder check, equipment constraints, self-order bypass)
+- [x] Declare self-order (follower_self_order phase)
+- [x] Execute volley fire (±1 Inaccuracy bonus, powder smoke, multi-model)
+- [x] Execute move & shoot (blundered 1D6 cap)
+- [x] Execute march (unblundered 2D6 / blundered 1D6)
+- [x] Execute charge (adjacency pathfinding, close_combat equipment)
+- [x] Advance flow (seat switching, follower self-order, round end, max rounds, powder smoke reset)
+- [x] Victory conditions (elimination, Headless Chicken, solo mode)
 
 ### Phase 3: Networking (Manual)
 - [ ] Room creation and joining
@@ -328,7 +317,7 @@ func _ready() -> void:
 
 ```bash
 # Run without --headless to see Godot's output window
-/Applications/Godot.app/Contents/MacOS/Godot -s tests/test_game_engine.gd
+$GODOT -s tests/test_game_engine.gd
 ```
 
 ## Performance Testing
@@ -355,31 +344,7 @@ func _ready() -> void:
 
 ## Integration Testing
 
-### Manual Integration Tests
-
-For features requiring full client/server interaction:
-
-1. **Start server:**
-   ```bash
-   /Applications/Godot.app/Contents/MacOS/Godot project.godot --server
-   ```
-
-2. **Run two clients:**
-   ```bash
-   /Applications/Godot.app/Contents/MacOS/Godot project.godot &
-   /Applications/Godot.app/Contents/MacOS/Godot project.godot &
-   ```
-
-3. **Test flow:**
-   - Client 1: Create room
-   - Client 2: Join room with code
-   - Both: Set ready
-   - Both: Roll and submit armies
-   - Both: Place units
-   - Both: Play through combat
-   - Verify: Victory detection
-
-4. **Document results** in `PHASE<N>_TESTING.md`
+For features requiring full client/server interaction, use `scripts/test-stack.sh` rather than launching Godot instances by hand. See the [Manual Testing Guide](Manual-Testing-Guide.md) for the end-to-end procedure.
 
 ## See Also
 

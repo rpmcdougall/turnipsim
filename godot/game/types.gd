@@ -243,7 +243,7 @@ class UnitState extends RefCounted:
 	var current_wounds: int = 0     # Wounds on the currently damaged model
 	var x: int = -1                 # -1 = not placed
 	var y: int = -1
-	var has_activated: bool = false
+	var has_ordered: bool = false
 	var is_dead: bool = false
 	var snob_id: String = ""        # ID of commanding Snob (empty if this IS a snob)
 
@@ -262,7 +262,7 @@ class UnitState extends RefCounted:
 		p_current_wounds: int = 0,
 		p_x: int = -1,
 		p_y: int = -1,
-		p_has_activated: bool = false,
+		p_has_ordered: bool = false,
 		p_is_dead: bool = false,
 		p_snob_id: String = ""
 	) -> void:
@@ -280,7 +280,7 @@ class UnitState extends RefCounted:
 		current_wounds = p_current_wounds
 		x = p_x
 		y = p_y
-		has_activated = p_has_activated
+		has_ordered = p_has_ordered
 		is_dead = p_is_dead
 		snob_id = p_snob_id
 
@@ -300,7 +300,7 @@ class UnitState extends RefCounted:
 			"current_wounds": current_wounds,
 			"x": x,
 			"y": y,
-			"has_activated": has_activated,
+			"has_ordered": has_ordered,
 			"is_dead": is_dead,
 			"snob_id": snob_id
 		}
@@ -325,7 +325,7 @@ class UnitState extends RefCounted:
 			data.get("current_wounds", 0),
 			data.get("x", -1),
 			data.get("y", -1),
-			data.get("has_activated", false),
+			data.get("has_ordered", false),
 			data.get("is_dead", false),
 			data.get("snob_id", "")
 		)
@@ -358,6 +358,14 @@ class GameState extends RefCounted:
 	var units: Array[UnitState] = []
 	var action_log: Array[Dictionary] = []
 	var winner_seat: int = 0
+
+	# Order sequence tracking (v17 turn structure)
+	var order_phase: String = ""             # "snob_select", "order_declare", "order_execute", "follower_self_order", ""
+	var current_snob_id: String = ""         # Snob currently issuing an order
+	var current_order_unit_id: String = ""   # Unit receiving the current order
+	var current_order_type: String = ""      # "volley_fire", "move_and_shoot", "march", "charge"
+	var current_order_blundered: bool = false
+	var current_order_move_bonus: int = 0    # Dice-rolled bonus movement for march/charge
 
 	func _init(
 		p_room_code: String = "",
@@ -394,7 +402,13 @@ class GameState extends RefCounted:
 			"initiative_seat": initiative_seat,
 			"units": units_array,
 			"action_log": action_log,
-			"winner_seat": winner_seat
+			"winner_seat": winner_seat,
+			"order_phase": order_phase,
+			"current_snob_id": current_snob_id,
+			"current_order_unit_id": current_order_unit_id,
+			"current_order_type": current_order_type,
+			"current_order_blundered": current_order_blundered,
+			"current_order_move_bonus": current_order_move_bonus
 		}
 
 	static func from_dict(data: Dictionary) -> GameState:
@@ -403,7 +417,11 @@ class GameState extends RefCounted:
 			for unit_data in data["units"]:
 				units_array.append(UnitState.from_dict(unit_data))
 
-		return GameState.new(
+		var action_log_array: Array[Dictionary] = []
+		if data.has("action_log"):
+			action_log_array.assign(data["action_log"])
+
+		var gs = GameState.new(
 			data.get("room_code", ""),
 			data.get("phase", "placement"),
 			data.get("current_round", 1),
@@ -411,9 +429,16 @@ class GameState extends RefCounted:
 			data.get("active_seat", 1),
 			data.get("initiative_seat", 1),
 			units_array,
-			data.get("action_log", []),
+			action_log_array,
 			data.get("winner_seat", 0)
 		)
+		gs.order_phase = data.get("order_phase", "")
+		gs.current_snob_id = data.get("current_snob_id", "")
+		gs.current_order_unit_id = data.get("current_order_unit_id", "")
+		gs.current_order_type = data.get("current_order_type", "")
+		gs.current_order_blundered = data.get("current_order_blundered", false)
+		gs.current_order_move_bonus = data.get("current_order_move_bonus", 0)
+		return gs
 
 
 ## Result of an engine operation.

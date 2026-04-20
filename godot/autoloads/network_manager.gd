@@ -10,9 +10,17 @@ var my_seat: int = 0
 ## Client's peer ID when connected to server.
 var my_peer_id: int = 0
 
+## Game state handed off from lobby → battle scene (read by battle.gd on load).
+## Cleared on leave_room / reset.
+var cached_game_state: Dictionary = {}
+
 
 func _ready() -> void:
-	is_server = OS.has_feature("dedicated_server") or "--server" in OS.get_cmdline_args()
+	var engine_args = OS.get_cmdline_args()
+	var user_args = OS.get_cmdline_user_args()
+	is_server = (OS.has_feature("dedicated_server")
+		or "--server" in engine_args
+		or "--server" in user_args)
 	if is_server:
 		print("[NetworkManager] Mode: SERVER")
 	else:
@@ -28,4 +36,5 @@ func set_my_seat(seat: int) -> void:
 ## Reset seat assignment (when leaving a room).
 func reset_seat() -> void:
 	my_seat = 0
+	cached_game_state = {}
 	print("[NetworkManager] Seat reset")
