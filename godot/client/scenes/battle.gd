@@ -21,9 +21,22 @@ var placement_panel: PanelContainer
 var confirm_placement_button: Button
 var roster_scroll: ScrollContainer
 var roster_list: VBoxContainer
-var orders_panel: PanelContainer
-var end_activation_button: Button
-var end_turn_button: Button
+
+# Order-phase panels (one visible at a time based on state.order_phase)
+var snob_select_panel: PanelContainer
+var snob_select_list: VBoxContainer
+var order_declare_panel: PanelContainer
+var order_declare_header: Label
+var declare_target_list: VBoxContainer
+var declare_order_buttons: Dictionary = {}  # order_type -> Button
+var order_execute_panel: PanelContainer
+var order_execute_header: Label
+var order_execute_instruction: Label
+var order_execute_confirm_button: Button
+var follower_self_panel: PanelContainer
+var self_target_list: VBoxContainer
+var self_order_buttons: Dictionary = {}  # order_type -> Button
+
 var log_scroll: ScrollContainer
 var log_container: VBoxContainer
 
@@ -31,8 +44,19 @@ var log_container: VBoxContainer
 var current_game_state: Types.GameState = null
 var my_seat: int = 0
 var selected_unit_id: String = ""
+var selected_target_id: String = ""      # For declare/self_order: target unit picked from list
+var pending_move_x: int = -1             # For move_and_shoot: staged destination before shot pick
+var pending_move_y: int = -1
 var unit_sprites: Dictionary = {}  # unit_id -> ColorRect
 var cell_size: float = 16.0  # Computed from available space
+
+const ORDER_TYPES: Array[String] = ["volley_fire", "move_and_shoot", "march", "charge"]
+const ORDER_LABELS: Dictionary = {
+	"volley_fire": "Volley Fire",
+	"move_and_shoot": "Move & Shoot",
+	"march": "March",
+	"charge": "Charge",
+}
 
 
 func _ready() -> void:
@@ -151,31 +175,125 @@ func _create_scene_structure() -> void:
 	confirm_placement_button.pressed.connect(_on_confirm_placement_pressed)
 	placement_vbox.add_child(confirm_placement_button)
 
-	# Orders panel
-	orders_panel = PanelContainer.new()
-	orders_panel.name = "OrdersPanel"
-	orders_panel.visible = false
-	sidebar.add_child(orders_panel)
+	# Snob-select panel (order_phase == "snob_select")
+	snob_select_panel = PanelContainer.new()
+	snob_select_panel.name = "SnobSelectPanel"
+	snob_select_panel.visible = false
+	sidebar.add_child(snob_select_panel)
 
-	var orders_vbox = VBoxContainer.new()
-	orders_panel.add_child(orders_vbox)
+	var snob_select_vbox = VBoxContainer.new()
+	snob_select_panel.add_child(snob_select_vbox)
 
-	var orders_label = Label.new()
-	orders_label.text = "Select unit → click to move\nClick enemy to attack"
-	orders_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	orders_vbox.add_child(orders_label)
+	var snob_select_title = Label.new()
+	snob_select_title.text = "Pick a Snob to Make Ready"
+	snob_select_title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	snob_select_vbox.add_child(snob_select_title)
 
-	end_activation_button = Button.new()
-	end_activation_button.text = "End Activation"
-	end_activation_button.custom_minimum_size = Vector2(0, 36)
-	end_activation_button.pressed.connect(_on_end_activation_pressed)
-	orders_vbox.add_child(end_activation_button)
+	snob_select_list = VBoxContainer.new()
+	snob_select_list.add_theme_constant_override("separation", 4)
+	snob_select_vbox.add_child(snob_select_list)
 
-	end_turn_button = Button.new()
-	end_turn_button.text = "End Turn"
-	end_turn_button.custom_minimum_size = Vector2(0, 36)
-	end_turn_button.pressed.connect(_on_end_turn_pressed)
-	orders_vbox.add_child(end_turn_button)
+	# Order-declare panel (order_phase == "order_declare")
+	order_declare_panel = PanelContainer.new()
+	order_declare_panel.name = "OrderDeclarePanel"
+	order_declare_panel.visible = false
+	sidebar.add_child(order_declare_panel)
+
+	var declare_vbox = VBoxContainer.new()
+	order_declare_panel.add_child(declare_vbox)
+
+	order_declare_header = Label.new()
+	order_declare_header.text = ""
+	order_declare_header.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	declare_vbox.add_child(order_declare_header)
+
+	var declare_target_title = Label.new()
+	declare_target_title.text = "Target (self or follower in range):"
+	declare_target_title.add_theme_font_size_override("font_size", 12)
+	declare_vbox.add_child(declare_target_title)
+
+	declare_target_list = VBoxContainer.new()
+	declare_target_list.add_theme_constant_override("separation", 2)
+	declare_vbox.add_child(declare_target_list)
+
+	var declare_order_title = Label.new()
+	declare_order_title.text = "Order:"
+	declare_order_title.add_theme_font_size_override("font_size", 12)
+	declare_vbox.add_child(declare_order_title)
+
+	for order_type in ORDER_TYPES:
+		var btn = Button.new()
+		btn.text = ORDER_LABELS[order_type]
+		btn.custom_minimum_size = Vector2(0, 30)
+		btn.disabled = true
+		btn.pressed.connect(_on_declare_order_pressed.bind(order_type))
+		declare_vbox.add_child(btn)
+		declare_order_buttons[order_type] = btn
+
+	# Order-execute panel (order_phase == "order_execute")
+	order_execute_panel = PanelContainer.new()
+	order_execute_panel.name = "OrderExecutePanel"
+	order_execute_panel.visible = false
+	sidebar.add_child(order_execute_panel)
+
+	var execute_vbox = VBoxContainer.new()
+	order_execute_panel.add_child(execute_vbox)
+
+	order_execute_header = Label.new()
+	order_execute_header.text = ""
+	order_execute_header.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	execute_vbox.add_child(order_execute_header)
+
+	order_execute_instruction = Label.new()
+	order_execute_instruction.text = ""
+	order_execute_instruction.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	order_execute_instruction.add_theme_font_size_override("font_size", 13)
+	execute_vbox.add_child(order_execute_instruction)
+
+	# Only used for move_and_shoot to skip the shot after moving
+	order_execute_confirm_button = Button.new()
+	order_execute_confirm_button.text = "Confirm move (no shot)"
+	order_execute_confirm_button.custom_minimum_size = Vector2(0, 32)
+	order_execute_confirm_button.visible = false
+	order_execute_confirm_button.pressed.connect(_on_execute_confirm_pressed)
+	execute_vbox.add_child(order_execute_confirm_button)
+
+	# Follower-self-order panel (order_phase == "follower_self_order")
+	follower_self_panel = PanelContainer.new()
+	follower_self_panel.name = "FollowerSelfPanel"
+	follower_self_panel.visible = false
+	sidebar.add_child(follower_self_panel)
+
+	var self_vbox = VBoxContainer.new()
+	follower_self_panel.add_child(self_vbox)
+
+	var self_title = Label.new()
+	self_title.text = "Unordered followers self-order"
+	self_title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	self_vbox.add_child(self_title)
+
+	var self_target_title = Label.new()
+	self_target_title.text = "Follower:"
+	self_target_title.add_theme_font_size_override("font_size", 12)
+	self_vbox.add_child(self_target_title)
+
+	self_target_list = VBoxContainer.new()
+	self_target_list.add_theme_constant_override("separation", 2)
+	self_vbox.add_child(self_target_list)
+
+	var self_order_title = Label.new()
+	self_order_title.text = "Order:"
+	self_order_title.add_theme_font_size_override("font_size", 12)
+	self_vbox.add_child(self_order_title)
+
+	for order_type in ORDER_TYPES:
+		var btn = Button.new()
+		btn.text = ORDER_LABELS[order_type]
+		btn.custom_minimum_size = Vector2(0, 30)
+		btn.disabled = true
+		btn.pressed.connect(_on_self_order_pressed.bind(order_type))
+		self_vbox.add_child(btn)
+		self_order_buttons[order_type] = btn
 
 	# Action log
 	var log_title = Label.new()
@@ -235,6 +353,8 @@ func _render_state() -> void:
 	if not current_game_state:
 		return
 
+	_reconcile_selection_state()
+
 	var is_my_turn = current_game_state.active_seat == my_seat
 	turn_banner.text = "Round %d — Player %d %s" % [
 		current_game_state.current_round,
@@ -242,16 +362,33 @@ func _render_state() -> void:
 		"(Your turn)" if is_my_turn else "(Opponent's turn)"
 	]
 
+	# Hide all order-phase panels first
+	snob_select_panel.visible = false
+	order_declare_panel.visible = false
+	order_execute_panel.visible = false
+	follower_self_panel.visible = false
+
 	if current_game_state.phase == "placement":
 		placement_panel.visible = is_my_turn
-		orders_panel.visible = false
 		_render_roster_list()
 	elif current_game_state.phase == "orders":
 		placement_panel.visible = false
-		orders_panel.visible = is_my_turn
+		if is_my_turn:
+			match current_game_state.order_phase:
+				"snob_select":
+					snob_select_panel.visible = true
+					_render_snob_select_panel()
+				"order_declare":
+					order_declare_panel.visible = true
+					_render_order_declare_panel()
+				"order_execute":
+					order_execute_panel.visible = true
+					_render_order_execute_panel()
+				"follower_self_order":
+					follower_self_panel.visible = true
+					_render_follower_self_panel()
 	else:
 		placement_panel.visible = false
-		orders_panel.visible = false
 
 	if grid_draw:
 		grid_draw.queue_redraw()
@@ -382,7 +519,6 @@ func _input(event: InputEvent) -> void:
 		return
 
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
-		# Get mouse position relative to board_container
 		var local_pos = board_container.get_local_mouse_position()
 		var grid = pixel_to_grid(local_pos.x, local_pos.y)
 
@@ -391,8 +527,16 @@ func _input(event: InputEvent) -> void:
 
 		if current_game_state.phase == "placement":
 			_handle_placement_click(grid.x, grid.y)
-		elif current_game_state.phase == "orders":
-			_handle_combat_click(grid.x, grid.y)
+		elif current_game_state.phase == "orders" and current_game_state.active_seat == my_seat:
+			match current_game_state.order_phase:
+				"snob_select":
+					_handle_snob_select_click(grid.x, grid.y)
+				"order_declare":
+					_handle_order_declare_click(grid.x, grid.y)
+				"order_execute":
+					_handle_order_execute_click(grid.x, grid.y)
+				"follower_self_order":
+					_handle_follower_self_click(grid.x, grid.y)
 
 
 func _handle_placement_click(x: int, y: int) -> void:
@@ -416,44 +560,322 @@ func _handle_placement_click(x: int, y: int) -> void:
 	})
 
 
-func _handle_combat_click(x: int, y: int) -> void:
-	if current_game_state.active_seat != my_seat:
-		return
+## Snob-select phase: clicking own Snob on the board is a shortcut for the
+## sidebar button.
+func _handle_snob_select_click(x: int, y: int) -> void:
+	var clicked = _get_unit_at(x, y)
+	if clicked and clicked.owner_seat == my_seat and clicked.is_snob() and not clicked.has_ordered:
+		_send_select_snob(clicked.id)
 
-	var clicked_unit = _get_unit_at(x, y)
 
-	if clicked_unit:
-		if clicked_unit.owner_seat == my_seat:
-			selected_unit_id = clicked_unit.id
-			_render_units()
-			_update_unit_info()
-		elif selected_unit_id != "":
-			var selected_unit = _get_unit_by_id(selected_unit_id)
-			if selected_unit and not selected_unit.has_ordered:
-				_attack_unit(selected_unit, clicked_unit)
+## Order-declare phase: clicking own eligible unit selects it as the target
+## of the order (Snob self-order or follower in command range). Clicking
+## elsewhere just updates the selected_unit_id for display.
+func _handle_order_declare_click(x: int, y: int) -> void:
+	var clicked = _get_unit_at(x, y)
+	if clicked and clicked.owner_seat == my_seat:
+		if _is_valid_declare_target(clicked):
+			selected_target_id = clicked.id
+			selected_unit_id = clicked.id
+			_render_state()
+
+
+## Order-execute phase: behaviour depends on the declared order.
+func _handle_order_execute_click(x: int, y: int) -> void:
+	var order_type = current_game_state.current_order_type
+	var clicked = _get_unit_at(x, y)
+
+	match order_type:
+		"volley_fire":
+			if clicked and clicked.owner_seat != my_seat:
+				_send_execute_order({"target_id": clicked.id})
+		"charge":
+			if clicked and clicked.owner_seat != my_seat:
+				_send_execute_order({"target_id": clicked.id})
+		"march":
+			if not clicked:
+				_send_execute_order({"x": x, "y": y})
+		"move_and_shoot":
+			if pending_move_x == -1:
+				# First click: stage destination cell
+				if not clicked:
+					pending_move_x = x
+					pending_move_y = y
+					_render_state()
+			else:
+				# Second click: pick enemy to shoot, or same cell to cancel staging
+				if clicked and clicked.owner_seat != my_seat:
+					_send_execute_order({
+						"x": pending_move_x,
+						"y": pending_move_y,
+						"target_id": clicked.id
+					})
+				elif not clicked:
+					# Restage destination
+					pending_move_x = x
+					pending_move_y = y
+					_render_state()
+
+
+## Follower self-order phase: click own unordered follower to select it.
+func _handle_follower_self_click(x: int, y: int) -> void:
+	var clicked = _get_unit_at(x, y)
+	if clicked and clicked.owner_seat == my_seat and not clicked.is_snob() and not clicked.has_ordered:
+		selected_target_id = clicked.id
+		selected_unit_id = clicked.id
+		_render_state()
+
+
+# =============================================================================
+# ACTION SENDERS
+# =============================================================================
+
+func _send_select_snob(snob_id: String) -> void:
+	NetworkClient.request_action.rpc_id(1, {
+		"type": "select_snob",
+		"snob_id": snob_id
+	})
+
+
+func _send_declare_order(unit_id: String, order_type: String) -> void:
+	NetworkClient.request_action.rpc_id(1, {
+		"type": "declare_order",
+		"unit_id": unit_id,
+		"order_type": order_type
+	})
+
+
+func _send_declare_self_order(unit_id: String, order_type: String) -> void:
+	NetworkClient.request_action.rpc_id(1, {
+		"type": "declare_self_order",
+		"unit_id": unit_id,
+		"order_type": order_type
+	})
+
+
+func _send_execute_order(params: Dictionary) -> void:
+	pending_move_x = -1
+	pending_move_y = -1
+	NetworkClient.request_action.rpc_id(1, {
+		"type": "execute_order",
+		"params": params
+	})
+
+
+# =============================================================================
+# ORDER-PHASE PANEL RENDERING
+# =============================================================================
+
+func _render_snob_select_panel() -> void:
+	for child in snob_select_list.get_children():
+		child.queue_free()
+
+	for unit in current_game_state.units:
+		if (unit.owner_seat == my_seat and unit.is_snob()
+				and not unit.is_dead and not unit.has_ordered):
+			var btn = Button.new()
+			btn.text = "%s (%d,%d)" % [unit.unit_type, unit.x, unit.y]
+			btn.custom_minimum_size = Vector2(0, 32)
+			btn.pressed.connect(_send_select_snob.bind(unit.id))
+			snob_select_list.add_child(btn)
+
+
+func _render_order_declare_panel() -> void:
+	var snob = _get_unit_by_id(current_game_state.current_snob_id)
+	var snob_name = snob.unit_type if snob else "?"
+	order_declare_header.text = "Snob Made Ready: %s (range %d)" % [
+		snob_name, snob.get_command_range() if snob else 0
+	]
+
+	for child in declare_target_list.get_children():
+		child.queue_free()
+
+	var valid_targets = _declare_valid_targets()
+	if valid_targets.is_empty():
+		var lbl = Label.new()
+		lbl.text = "No valid targets in range"
+		lbl.add_theme_color_override("font_color", Color(1, 0.6, 0.4))
+		declare_target_list.add_child(lbl)
 	else:
-		if selected_unit_id != "":
-			var selected_unit = _get_unit_by_id(selected_unit_id)
-			if selected_unit and not selected_unit.has_ordered:
-				_move_unit(selected_unit, x, y)
+		for unit in valid_targets:
+			var btn = Button.new()
+			var is_self = (unit.id == current_game_state.current_snob_id)
+			var prefix = "[Self] " if is_self else ""
+			btn.text = "%s%s (%d,%d)" % [prefix, unit.unit_type, unit.x, unit.y]
+			btn.custom_minimum_size = Vector2(0, 28)
+			btn.toggle_mode = true
+			btn.button_pressed = (unit.id == selected_target_id)
+			btn.pressed.connect(_on_declare_target_picked.bind(unit.id))
+			declare_target_list.add_child(btn)
+
+	_update_declare_button_states()
 
 
-func _move_unit(unit: Types.UnitState, x: int, y: int) -> void:
-	NetworkClient.request_action.rpc_id(1, {
-		"type": "move",
-		"unit_id": unit.id,
-		"x": x,
-		"y": y
-	})
+func _render_order_execute_panel() -> void:
+	var unit = _get_unit_by_id(current_game_state.current_order_unit_id)
+	var unit_name = unit.unit_type if unit else "?"
+	var order_type = current_game_state.current_order_type
+	var blunder_tag = " [BLUNDERED]" if current_game_state.current_order_blundered else ""
+	order_execute_header.text = "%s: %s%s" % [unit_name, ORDER_LABELS.get(order_type, order_type), blunder_tag]
+
+	order_execute_confirm_button.visible = false
+
+	match order_type:
+		"volley_fire":
+			order_execute_instruction.text = "Click an enemy unit to fire."
+		"charge":
+			var bonus = current_game_state.current_order_move_bonus
+			var move = unit.base_stats.movement if unit else 0
+			order_execute_instruction.text = "Click enemy to charge (range %d + %d = %d)." % [
+				move, bonus, move + bonus
+			]
+		"march":
+			var bonus = current_game_state.current_order_move_bonus
+			var move = unit.base_stats.movement if unit else 0
+			order_execute_instruction.text = "Click destination cell (range %d + %d = %d)." % [
+				move, bonus, move + bonus
+			]
+		"move_and_shoot":
+			var move = unit.base_stats.movement if unit else 0
+			if pending_move_x == -1:
+				order_execute_instruction.text = "Click destination (max %d cells)." % move
+			else:
+				order_execute_instruction.text = "Destination: (%d,%d).\nClick enemy to shoot, or Confirm to skip." % [
+					pending_move_x, pending_move_y
+				]
+				order_execute_confirm_button.visible = true
 
 
-func _attack_unit(attacker: Types.UnitState, target: Types.UnitState) -> void:
-	var action_type = "shoot" if attacker.base_stats.weapon_range > 0 and not attacker.has_powder_smoke else "charge"
-	NetworkClient.request_action.rpc_id(1, {
-		"type": action_type,
-		"attacker_id": attacker.id,
-		"target_id": target.id
-	})
+func _render_follower_self_panel() -> void:
+	for child in self_target_list.get_children():
+		child.queue_free()
+
+	for unit in current_game_state.units:
+		if (unit.owner_seat == my_seat and not unit.is_snob()
+				and not unit.is_dead and not unit.has_ordered):
+			var btn = Button.new()
+			btn.text = "%s (%d,%d)" % [unit.unit_type, unit.x, unit.y]
+			btn.custom_minimum_size = Vector2(0, 28)
+			btn.toggle_mode = true
+			btn.button_pressed = (unit.id == selected_target_id)
+			btn.pressed.connect(_on_self_target_picked.bind(unit.id))
+			self_target_list.add_child(btn)
+
+	_update_self_button_states()
+
+
+# =============================================================================
+# BUTTON HANDLERS
+# =============================================================================
+
+func _on_declare_target_picked(unit_id: String) -> void:
+	selected_target_id = unit_id
+	selected_unit_id = unit_id
+	_render_state()
+
+
+func _on_self_target_picked(unit_id: String) -> void:
+	selected_target_id = unit_id
+	selected_unit_id = unit_id
+	_render_state()
+
+
+func _on_declare_order_pressed(order_type: String) -> void:
+	if selected_target_id == "":
+		return
+	_send_declare_order(selected_target_id, order_type)
+	selected_target_id = ""
+
+
+func _on_self_order_pressed(order_type: String) -> void:
+	if selected_target_id == "":
+		return
+	_send_declare_self_order(selected_target_id, order_type)
+	selected_target_id = ""
+
+
+func _on_execute_confirm_pressed() -> void:
+	# Move-and-shoot: commit the staged destination with no target
+	if pending_move_x == -1:
+		return
+	_send_execute_order({"x": pending_move_x, "y": pending_move_y})
+
+
+# =============================================================================
+# VALIDATION HELPERS (client-side hints only — server is authoritative)
+# =============================================================================
+
+## Targets a player may legally pick in order_declare: the commanding Snob
+## itself, plus alive unordered followers within Manhattan command range.
+func _declare_valid_targets() -> Array:
+	var results: Array = []
+	var snob = _get_unit_by_id(current_game_state.current_snob_id)
+	if not snob:
+		return results
+	# Snob can always self-order
+	results.append(snob)
+	var cmd_range = snob.get_command_range()
+	for unit in current_game_state.units:
+		if (unit.owner_seat == my_seat and not unit.is_snob()
+				and not unit.is_dead and not unit.has_ordered):
+			var dist = abs(unit.x - snob.x) + abs(unit.y - snob.y)
+			if dist <= cmd_range:
+				results.append(unit)
+	return results
+
+
+func _is_valid_declare_target(unit: Types.UnitState) -> bool:
+	var targets = _declare_valid_targets()
+	for t in targets:
+		if t.id == unit.id:
+			return true
+	return false
+
+
+## Can `unit` legally receive `order_type`? Mirror of engine's declare_order
+## validation, used to enable/disable order buttons.
+func _can_receive_order(unit: Types.UnitState, order_type: String) -> bool:
+	if not unit or unit.is_dead or unit.has_ordered:
+		return false
+	match order_type:
+		"volley_fire":
+			return unit.base_stats.weapon_range > 0 and not unit.has_powder_smoke
+		"move_and_shoot":
+			return unit.base_stats.weapon_range > 0 and not unit.has_powder_smoke
+		"march":
+			return not ("immobile" in unit.special_rules)
+		"charge":
+			return not ("immobile" in unit.special_rules)
+	return false
+
+
+## Drop stale UI selections when the server-driven state changes phase/order.
+func _reconcile_selection_state() -> void:
+	var order_phase = current_game_state.order_phase
+	# Clear staged move-and-shoot destination whenever we're not executing an order,
+	# or when the ordered unit has changed.
+	if order_phase != "order_execute":
+		pending_move_x = -1
+		pending_move_y = -1
+	# Clear target selection outside declaration phases, or if target no longer valid.
+	if order_phase != "order_declare" and order_phase != "follower_self_order":
+		selected_target_id = ""
+	elif selected_target_id != "":
+		var t = _get_unit_by_id(selected_target_id)
+		if not t or t.is_dead or t.owner_seat != my_seat:
+			selected_target_id = ""
+
+
+func _update_declare_button_states() -> void:
+	var unit = _get_unit_by_id(selected_target_id)
+	for order_type in ORDER_TYPES:
+		declare_order_buttons[order_type].disabled = not _can_receive_order(unit, order_type)
+
+
+func _update_self_button_states() -> void:
+	var unit = _get_unit_by_id(selected_target_id)
+	for order_type in ORDER_TYPES:
+		self_order_buttons[order_type].disabled = not _can_receive_order(unit, order_type)
 
 
 func _get_unit_at(x: int, y: int) -> Types.UnitState:
@@ -487,21 +909,6 @@ func _add_log_entry(text: String) -> void:
 
 func _on_confirm_placement_pressed() -> void:
 	NetworkClient.request_action.rpc_id(1, {"type": "confirm_placement"})
-
-
-func _on_end_activation_pressed() -> void:
-	if selected_unit_id == "":
-		return
-	NetworkClient.request_action.rpc_id(1, {
-		"type": "end_activation",
-		"unit_id": selected_unit_id
-	})
-	selected_unit_id = ""
-	_update_unit_info()
-
-
-func _on_end_turn_pressed() -> void:
-	NetworkClient.request_action.rpc_id(1, {"type": "end_turn"})
 
 
 # =============================================================================
