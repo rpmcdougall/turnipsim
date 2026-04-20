@@ -1,8 +1,8 @@
 # Turnip28 Simulator - Project Memory
 
-**Last Updated:** 2026-04-19
-**Current state:** v17 order state machine merged to `main` (PR #32, commit `f5fa929`)
-**Active branch:** none — working on `main`
+**Last Updated:** 2026-04-20
+**Current state:** victory-conditions work complete, PR [#35](https://github.com/rpmcdougall/turnipsim/pull/35) **open on `feature/victory-conditions`** awaiting merge. Closes #22, #33, #34.
+**Active branch:** `feature/victory-conditions` (pushed; don't start new work until merged)
 
 ## Phase status
 
@@ -16,7 +16,7 @@
 | 4 — Battle engine (initial) | ✅ | PR #26 — later replaced by v17 order state machine (PR #32) |
 | 4.5 — v17 data model | ✅ | PR #30 (issue #27) |
 | 4.5 — v17 order mechanics | ✅ | **PR #32 (issue #31)** — this session |
-| 5 — Polish | 🚧 | #22 In Progress (partial victory conditions), #21 Todo (visual polish) |
+| 5 — Polish | 🚧 | #22 ✅ on PR #35 (max-rounds tiebreak, end-game overlay), #21 Todo (visual polish — blocks comfortable play-testing per 2026-04-20 notes), #36 Todo (objectives, replaces placeholder tiebreak) |
 | 5b — Army submission UI | 🚧 | #28 Todo — lobby currently picks random preset; real builder not yet implemented (old #20 was a placeholder) |
 | 6 — Deploy | ⬜ | #23–25 Todo |
 | 7 — Cult mechanics | ⬜ | #29 Todo |
@@ -42,7 +42,7 @@ godot/
 │   └── network_client.gd          # Signals + RPC interface
 └── tests/
     ├── test_runner.gd             # 19 tests — types, ruleset, roster validation
-    └── test_game_engine.gd        # 48 tests — order state machine, combat, victory
+    └── test_game_engine.gd        # 55 tests — order state machine, combat, victory, fizzle paths
 ```
 
 **Key design decisions:**
@@ -82,7 +82,7 @@ export GODOT="/Applications/Godot.app/Contents/MacOS/Godot"  # macOS
 # Automated tests
 cd godot/
 $GODOT --headless -s tests/test_runner.gd       # 19 tests
-$GODOT --headless -s tests/test_game_engine.gd  # 48 tests
+$GODOT --headless -s tests/test_game_engine.gd  # 55 tests
 
 # Full local stack (headless server + 2 windowed clients)
 scripts/test-stack.sh
@@ -105,20 +105,23 @@ Per-process logs land in `test-logs/` (gitignored). Ctrl+C tears everything down
 - `entry.gd:6/8` benign warning — `change_scene_to_file()` in `_ready()` needs to be `call_deferred`'d
 - Fresh-clone tests fail until `$GODOT --editor --quit` builds the script class cache once
 - `docs/wiki/Phase-4-UI-{Programmatic,Tasks}.md` are historical checkpoint-style docs; candidates for archival
+- **Zombie server on port 9999** — `test-stack.sh` doesn't detect a stale previously-launched server; new stack's server silently fails to bind while clients attach to the old one (ghost-code behavior). Workaround: `taskkill //F //IM Godot_v4.6.2-stable_win64.exe` before relaunch. Candidate for a small script hardening pass.
+- **Max-rounds tiebreak is a placeholder** — v17 actually scores by objectives captured (#36). Current alive-units → model-count tiebreak is stand-in logic, marked `TODO(objectives)` in `game_engine.gd:check_victory`.
 
 ## Checkpoint history
 
 - `memory/checkpoint-2026-04-17-phases-1-2-3.md`
 - `memory/checkpoint-2026-04-17-phase-3b-4.md`
 - `memory/checkpoint-2026-04-18-phase-4-ui.md`
-- `memory/checkpoint-2026-04-19-order-mechanics.md` ← this session
+- `memory/checkpoint-2026-04-19-order-mechanics.md`
+- `memory/checkpoint-2026-04-20-victory-conditions.md` ← this session
 
 ## Next pickup
 
-Three independent options:
+Merge PR #35 first. Then, per agreement this session: **#28 roster builder** is next (current lobby picks a random preset — low player value). After that:
 
-1. **#22** — finish victory conditions (objectives, victory/defeat UI, end-of-game summary, new-game button)
-2. **#21** — Phase 5 visual polish (unit sprites vs ColorRects, terrain)
-3. **Phase 6** — export presets + deploy (#23–25)
+- **#21** — Phase 5 visual polish (grid targeting visibility flagged as friction during manual play on 2026-04-20, commented on issue)
+- **#36** — v17 objectives (replaces the placeholder max-rounds tiebreak with real scoring)
+- **Phase 6** — export presets + deploy (#23–25)
 
-Ask before picking; no dependencies between them.
+No strict dependencies between #28, #21, and #36 — pick whichever fits the session.
