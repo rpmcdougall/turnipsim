@@ -14,3 +14,6 @@ Desktop.ini
 *.exe
 *.x86_64
 *.pck
+
+# Local test stack logs
+test-logs/
