@@ -94,7 +94,9 @@ if [ "$SOLO" = false ]; then
     echo "  Client 2 PID ${PIDS[2]}  log: $LOG_DIR/client2.log"
 fi
 echo ""
-echo "Press Ctrl+C to stop everything."
+echo "Press Ctrl+C to stop everything (closing individual clients is fine)."
 
-# Wait for any child to exit (or Ctrl+C). If one dies, tear down the rest.
-wait -n "${PIDS[@]}" 2>/dev/null || true
+# Wait for all children to exit, or Ctrl+C. Closing one client window no longer
+# cascades into tearing down the server + other client — you can iterate on one
+# client at a time during a session.
+wait 2>/dev/null || true
