@@ -13,7 +13,7 @@ If these fail, stop — fix them before bothering with a live stack.
 ```bash
 cd godot/
 $GODOT --headless -s tests/test_runner.gd         # Phase 1 — 19 tests
-$GODOT --headless -s tests/test_game_engine.gd    # Engine — 48 tests
+$GODOT --headless -s tests/test_game_engine.gd    # Engine — 51 tests
 ```
 
 Both should report `Failed: 0`.
@@ -84,11 +84,37 @@ On success the turn either passes to the opposing seat (if they still have unord
 
 ### 4. Victory
 
-- Elimination: all of a seat's units dead → other seat wins.
-- Headless Chicken: all of a seat's Snobs dead → instant loss for that seat.
-- Max rounds (4) elapsed with both sides alive → draw by current rules (Phase 5 will add objectives).
+Three end conditions, all surfacing via the same `_send_game_ended` broadcast:
 
-Server broadcasts `_send_game_ended`; both clients display `VICTORY! / DEFEAT! / DRAW!` in the turn banner.
+| Condition | Winner | Reason string contains |
+|---|---|---|
+| One seat has no living units (and the other does) | Opposing seat | `"eliminated"` |
+| One seat has no living Snobs | Opposing seat | `"Headless Chicken"` |
+| `current_round > max_rounds` | Tiebreak by alive units, then by total alive models, then draw | `"Time expired"` |
+
+On game end, every client:
+
+1. Turn banner rewrites to `VICTORY / DEFEAT / DRAW — <reason>`.
+2. A **Game Over overlay** appears: large coloured title, reason, rounds played, and surviving-unit counts for both sides.
+3. A **Return to Main Menu** button disconnects the peer and navigates back to `main.tscn`. The other player stays in the battle scene until they click their own button (or you kill the client window).
+
+#### Testing victory paths locally
+
+The fastest way to force each path without an hour-long game:
+
+- **Elimination / Headless Chicken** — during `order_execute`, have the opposing seat volley-fire / charge your weaker units until they're all dead (or all Snobs are dead). Works from a Balanced vs Gunline matchup in 2–3 rounds with lucky rolls.
+- **Max-rounds expiry** — avoid combat for 4 rounds. Pick March every time on both seats. After round 4 ends with units still alive, the overlay should say `"Time expired — ..."` with the correct winner based on alive-unit count (or draw if equal).
+- **Forcing a max-rounds draw** — use `--solo` mode with symmetric rosters on both seats (not possible without a helper), or temporarily edit `state.max_rounds = 1` in `game_engine.gd:_initialize_game_state` and watch the overlay fire after the first round.
+
+#### What to check on the overlay
+
+| Item | Expected |
+|---|---|
+| Title colour | Green for VICTORY, red for DEFEAT, yellow for DRAW |
+| Rounds played | Clamped to `max_rounds` (4), not `current_round` which advances past it |
+| Unit counts | `surviving / total` matches what you see on the board |
+| Return button | Single click → main menu, no stuck state. Running a second `scripts/test-stack.sh` session should reconnect cleanly. |
+| Double-firing | If the server happens to send two game_ended events, only one overlay should show (guarded by `has_node("GameOverOverlay")`) |
 
 ---
 
