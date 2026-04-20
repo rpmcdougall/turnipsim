@@ -951,7 +951,10 @@ static func check_victory(state: Types.GameState) -> Dictionary:
 	if snobs_alive_2 == 0 and snobs_alive_1 > 0:
 		return {"winner": 1, "reason": "Player 2 lost all Snobs (Headless Chicken)"}
 
-	# Time limit reached: tiebreak by surviving units, then by model count
+	# Time limit reached: placeholder tiebreak by surviving units, then by
+	# model count. v17's real rule is objective-based scoring (see #36) —
+	# replace this branch once objectives / scenarios are implemented.
+	# TODO(objectives): see https://github.com/rpmcdougall/turnipsim/issues/36
 	if state.current_round > state.max_rounds:
 		if units_alive_1 > units_alive_2:
 			return {"winner": 1, "reason": "Time expired — Player 1 holds the field"}
