@@ -20,7 +20,7 @@ Welcome to the Turnip28 Simulator development wiki. This documentation covers pr
 - [Development Process](Development-Process.md) - Workflow, branches, commits
 - [Code Style Guide](Code-Style-Guide.md) - GDScript conventions and patterns
 - [Testing Guidelines](Testing-Guidelines.md) - Writing and running tests
-- [Manual Testing Guide](Manual-Testing-Guide.md) - Phase 4 integration testing
+- [Manual Testing Guide](Manual-Testing-Guide.md) - Local multiplayer smoke-test procedure
 - [Debugging Guide](Debugging-Guide.md) - Common issues and troubleshooting
 
 ### Implementation Tasks

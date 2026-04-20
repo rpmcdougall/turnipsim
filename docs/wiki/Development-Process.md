@@ -89,9 +89,9 @@ Before pushing, verify tests pass:
 cd godot/
 
 # Run all test suites
-/Applications/Godot.app/Contents/MacOS/Godot --headless -s tests/test_runner.gd
-/Applications/Godot.app/Contents/MacOS/Godot --headless -s tests/test_game_engine.gd
-/Applications/Godot.app/Contents/MacOS/Godot --headless -s tests/test_ui_instantiate.gd
+$GODOT --headless -s tests/test_runner.gd
+$GODOT --headless -s tests/test_game_engine.gd
+$GODOT --headless -s tests/test_ui_instantiate.gd
 ```
 
 See [Testing Guidelines](Testing-Guidelines.md) for writing new tests.

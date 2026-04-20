@@ -31,23 +31,23 @@ Common issues, troubleshooting steps, and debugging techniques for Turnip28 Simu
 2. **Wrong Godot version**
    ```bash
    # Check version
-   /Applications/Godot.app/Contents/MacOS/Godot --version
+   $GODOT --version
    # Should be 4.6.2.stable.official
    ```
 
 3. **Missing --server flag**
    ```bash
    # Wrong
-   /Applications/Godot.app/Contents/MacOS/Godot project.godot
+   $GODOT project.godot
 
    # Correct
-   /Applications/Godot.app/Contents/MacOS/Godot project.godot --server
+   $GODOT project.godot --server
    ```
 
 **Debug steps:**
 ```bash
 # Run with verbose output
-/Applications/Godot.app/Contents/MacOS/Godot project.godot --server --verbose
+$GODOT project.godot --server --verbose
 
 # Check console for errors
 # Look for port binding errors, missing files
@@ -95,11 +95,11 @@ lsof -i :9999
 1. **Wrong working directory**
    ```bash
    # Wrong - run from repo root
-   /Applications/Godot.app/Contents/MacOS/Godot --headless -s godot/tests/test_runner.gd
+   $GODOT --headless -s godot/tests/test_runner.gd
 
    # Correct - run from godot/
    cd godot/
-   /Applications/Godot.app/Contents/MacOS/Godot --headless -s tests/test_runner.gd
+   $GODOT --headless -s tests/test_runner.gd
    ```
 
 2. **Typed array assignment**
@@ -116,14 +116,14 @@ lsof -i :9999
 
 3. **Missing dependencies** (scenes, resources)
    ```
-   # Error: "res://game/rulesets/mvp.json" not found
+   # Error: "res://game/rulesets/v17.json" not found
    # → Check file exists, path is correct
    ```
 
 **Debug steps:**
 ```bash
 # Run tests without --headless to see Godot output window
-/Applications/Godot.app/Contents/MacOS/Godot -s tests/test_runner.gd
+$GODOT -s tests/test_runner.gd
 
 # Add verbose logging to failing test
 func _test_failing_case() -> void:

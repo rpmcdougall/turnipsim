@@ -1,722 +1,151 @@
-# Phase 4 Manual Testing Guide
+# Manual Testing Guide
 
-**Status:** Phase 3b + Phase 4 Server Complete
-**Branch:** `feature/phase-3b-4-battle`
-**Date:** 2026-04-17
+Local end-to-end smoke-test procedure for the full client/server stack. Run this before merging significant feature branches or whenever you suspect cross-layer regressions the unit tests won't catch.
 
-This guide covers manual testing procedures for Phase 3b (army submission) and Phase 4 (battle gameplay). Client UI is pending, so some tests require implementing the battle scene first.
+For setup (Godot install, `$GODOT`, etc.) see [Project Setup](Project-Setup.md).
 
 ---
 
-## Prerequisites
+## Automated suites (run first)
 
-### Required
-- Godot 4.6.2 stable installed
-- Server and client builds working
-- Two separate client windows (for multiplayer testing)
-
-### Verify Installation
-
-```bash
-# Check Godot version
-/Applications/Godot.app/Contents/MacOS/Godot --version
-# Should output: 4.6.2.stable.official
-```
-
----
-
-## Part 1: Automated Tests
-
-Run these first to verify core functionality.
-
-### 1.1 Phase 1 Game Logic Tests
+If these fail, stop — fix them before bothering with a live stack.
 
 ```bash
 cd godot/
-/Applications/Godot.app/Contents/MacOS/Godot --headless -s tests/test_runner.gd
+$GODOT --headless -s tests/test_runner.gd         # Phase 1 — 19 tests
+$GODOT --headless -s tests/test_game_engine.gd    # Engine — 48 tests
 ```
 
-**Expected output:**
-```
-=== Running Game Tests ===
-
-✓ PASS: Ruleset should load from valid JSON
-✓ PASS: Ruleset should error on missing file
-...
-✓ PASS: Army roller should be deterministic
-...
-
-=== Test Results ===
-Passed: 19
-Failed: 0
-```
-
-**If failed:**
-- Check working directory is `godot/`
-- Verify `game/rulesets/mvp.json` exists
-- Check for syntax errors in test file
-
-### 1.2 Phase 4 Engine Tests
-
-```bash
-cd godot/
-/Applications/Godot.app/Contents/MacOS/Godot --headless -s tests/test_game_engine.gd
-```
-
-**Expected output:**
-```
-=== Running GameEngine Tests ===
-
-✓ PASS: place_unit should succeed in valid deployment zone
-✓ PASS: place_unit should fail outside deployment zone
-...
-✓ PASS: move_unit should succeed within movement range
-...
-✓ PASS: check_victory should detect last unit standing
-
-=== Test Results ===
-Passed: 28
-Failed: 6
-
-Note: 6 shooting mechanics edge cases pending (known issue)
-```
-
-**If more than 6 failed:**
-- Check for recent code changes
-- Review error messages for clues
-- Verify typed array handling (use `.append()` not `= []`)
-
-### 1.3 UI Instantiation Tests
-
-```bash
-cd godot/
-/Applications/Godot.app/Contents/MacOS/Godot --headless -s tests/test_ui_instantiate.gd
-```
-
-**Expected output:**
-```
-=== UI Instantiation Tests ===
-
-✓ PASS: main.tscn should load without errors
-✓ PASS: test_roll.tscn should load without errors
-✓ PASS: lobby.tscn should load without errors
-...
-
-=== Test Results ===
-Passed: X
-Failed: 0
-```
-
-**If failed:**
-- Scene file might be corrupted
-- Missing script dependencies
-- Try opening scene in Godot editor to see specific errors
+Both should report `Failed: 0`.
 
 ---
 
-## Part 2: Phase 3b Army Submission Flow
-
-**Goal:** Verify army rolling and submission works in lobby.
-
-### 2.1 Start Server
+## Launch the local stack
 
 ```bash
-cd godot/
-/Applications/Godot.app/Contents/MacOS/Godot project.godot --server
+scripts/test-stack.sh          # headless server + 2 windowed clients
+scripts/test-stack.sh --solo   # headless server + 1 client (for solo-test mode)
 ```
 
-**Expected console output:**
-```
-[ServerMain] Starting dedicated server on port 9999
-[ServerMain] ENet server listening on *:9999
-[RoomManager] Room manager initialized
-```
-
-**If server doesn't start:**
-- Check port 9999 not in use: `lsof -i :9999`
-- Check firewall settings
-- Look for error messages in console
-
-### 2.2 Start Two Clients
-
-**Terminal 1:**
-```bash
-cd godot/
-/Applications/Godot.app/Contents/MacOS/Godot project.godot
-```
-
-**Terminal 2:**
-```bash
-cd godot/
-/Applications/Godot.app/Contents/MacOS/Godot project.godot
-```
-
-Both clients should open to main menu.
-
-### 2.3 Client 1: Create Room
-
-**Steps:**
-1. Click **"Multiplayer Lobby"**
-2. Enter player name: `Player1`
-3. Server IP: `127.0.0.1:9999`
-4. Click **"Connect"**
-5. ✅ Verify: Status shows "Connected"
-6. Click **"Create Room"**
-7. ✅ Verify: Room code appears (e.g., "XYZ789")
-8. ✅ Verify: Player list shows "Player1 (Seat 1)"
-
-**Server console should show:**
-```
-[ServerMain] Peer connected: 1234567890
-[NetworkServer] Peer 1234567890 requesting room creation (name: Player1)
-[RoomManager] Created room XYZ789 for peer 1234567890
-```
-
-### 2.4 Client 2: Join Room
-
-**Steps:**
-1. Click **"Multiplayer Lobby"**
-2. Enter player name: `Player2`
-3. Server IP: `127.0.0.1:9999`
-4. Click **"Connect"**
-5. ✅ Verify: Status shows "Connected"
-6. Enter room code from Client 1 (e.g., "XYZ789")
-7. Click **"Join Room"**
-8. ✅ Verify: Both clients show "Player1 (Seat 1)" and "Player2 (Seat 2)"
-
-**Server console should show:**
-```
-[ServerMain] Peer connected: 9876543210
-[NetworkServer] Peer 9876543210 requesting to join room XYZ789 (name: Player2)
-[RoomManager] Peer 9876543210 joined room XYZ789
-```
-
-### 2.5 Both Clients: Ready Up
-
-**Steps:**
-1. Both clients check **"Ready"** checkbox
-2. ✅ Verify: Both see checkmarks next to player names
-
-**Server console:**
-```
-[NetworkServer] Peer 1234567890 set ready: true
-[NetworkServer] Peer 9876543210 set ready: true
-[NetworkServer] All players in room XYZ789 are ready
-```
-
-### 2.6 Client 1: Roll Army
-
-**Steps:**
-1. Click **"Roll Army"** button
-2. ✅ Verify: Army display shows 5-10 units
-3. ✅ Verify: Each unit shows:
-   - Name (e.g., "Toff Leader")
-   - Archetype
-   - Stats (Movement, Shooting, Combat, etc.)
-   - Weapon
-   - Mutations (if any)
-4. ✅ Verify: **"Submit Army"** button is now enabled
-
-**If Roll Army button doesn't exist:**
-- UI nodes not added to lobby.tscn yet
-- See `docs/wiki/Phase-4-UI-Tasks.md` Task 1
-
-### 2.7 Client 1: Submit Army
-
-**Steps:**
-1. Click **"Submit Army"** button
-2. ✅ Verify: Status message "Army submitted"
-
-**Server console:**
-```
-[NetworkServer] Peer 1234567890 submitting army (7 units)
-```
-
-**Both clients should see:**
-- Notification that Player1 submitted their army
-
-### 2.8 Client 2: Roll and Submit Army
-
-**Steps:**
-1. Click **"Roll Army"**
-2. ✅ Verify: Army displays
-3. Click **"Submit Army"**
-4. ✅ Verify: Status message "Army submitted"
-
-**Server console:**
-```
-[NetworkServer] Peer 9876543210 submitting army (6 units)
-[NetworkServer] Starting game for room XYZ789
-```
-
-### 2.9 Game Start Transition
-
-**Expected behavior:**
-- Server broadcasts `_send_game_started` to both clients
-- Both clients transition to `battle.tscn`
-
-**If battle.tscn doesn't exist:**
-- Clients will show error: "Scene not found"
-- Expected at this stage (client UI pending)
-- See `docs/wiki/Phase-4-UI-Tasks.md` Task 2
-
-**Server console:**
-```
-[NetworkServer] Starting game for room XYZ789
-[NetworkServer] Initialized game state: placement phase, active_seat=1
-```
+The script detects Windows (Git Bash) vs macOS, writes per-process logs to `test-logs/{server,client1,client2}.log`, and tears everything down on Ctrl+C. Closing a single client window is safe — the rest stays up so you can iterate.
 
 ---
 
-## Part 3: Phase 4 Server-Side Testing
+## Smoke-test flow
 
-**Goal:** Verify game engine and server RPC routing work correctly.
+### 1. Lobby → army submission
 
-**Note:** These tests can be done via server console or by implementing temporary RPC test scripts.
+**Client 1**
+1. Main menu → Multiplayer Lobby → Create Room
+2. Note the 6-char room code
+3. Select Army → pick a preset (e.g. Balanced Regiment, Gunline) → Submit Army
 
-### 3.1 Verify Game State Initialization
+**Client 2**
+1. Main menu → Multiplayer Lobby → Join Room → enter the code from client 1
+2. Select Army → pick a preset → Submit Army
 
-**Server console should show:**
-```
-[NetworkServer] Initialized game state: placement phase, active_seat=1
-```
+Both clients should transition to `battle.tscn` once both rosters are submitted. Server log should show `Starting game for room <CODE>`.
 
-**Check that:**
-- ✅ All units from both armies are in game state
-- ✅ All units have position (-1, -1) = not placed
-- ✅ Phase is "placement"
-- ✅ Active seat is 1
-- ✅ Turn is 1
+### 2. Placement phase
 
-### 3.2 Test Placement Actions (Manual RPC)
+- Seat 1's deployment zone is rows **28–31** (bottom); seat 2's is rows **0–3** (top).
+- Active player clicks grid cells in their zone to place each unit in order.
+- Clicking outside the zone or on an occupied cell is rejected server-side (look for `Sending error to peer ...: Not in your deployment zone`).
+- Click **Confirm Placement** when all units are placed. Turn passes to the other seat.
 
-**Create temporary test script:** `godot/tests/test_placement_rpc.gd`
+### 3. Orders phase — v17 state machine
 
-```gdscript
-extends Node
+Each round, players alternate picking Snobs to "Make Ready." The sidebar is phase-aware; only one of the four sub-panels is visible at a time, based on `state.order_phase`.
 
-func _ready() -> void:
-	# Connect to server
-	var peer = ENetMultiplayerPeer.new()
-	peer.create_client("127.0.0.1", 9999)
-	multiplayer.multiplayer_peer = peer
+**snob_select** — pick a Snob
+- Sidebar lists alive unordered Snobs as buttons.
+- Clicking a Snob (button or directly on the board) advances to `order_declare`.
 
-	await get_tree().create_timer(1.0).timeout
+**order_declare** — choose target + order
+- Sidebar shows the Made-Ready Snob's type and command range.
+- A translucent Manhattan diamond overlays the board around the Snob — any cell inside is within command range.
+- Target list shows the Snob itself (self-order) plus alive unordered Followers inside the diamond.
+- Four order buttons (Volley Fire / Move & Shoot / March / Charge) enable or disable based on the selected target's capabilities (weapon range, powder smoke, immobile special rule).
+- Pick a target, pick an order → server rolls the blunder die + 2D6 move dice, transitions to `order_execute`. A blundered die (1) adds a panic token and reduces march bonus to the first die only. Snob self-orders never blunder.
 
-	# Send placement action
-	var action_data = {
-		"type": "place_unit",
-		"unit_id": "unit_0",
-		"x": 10,
-		"y": 30
-	}
-	request_action.rpc_id(1, action_data)
+**order_execute** — run the order
+- Sidebar shows the declared order, blundered state, and movement range with dice bonus applied.
+- **Volley Fire:** click an enemy unit to fire (`-1 Inaccuracy` unless blundered).
+- **March:** click a destination cell within `M + move_bonus`.
+- **Charge:** click an enemy within `M + move_bonus`; attacker auto-pathfinds to an adjacent cell and resolves melee.
+- **Move & Shoot:** click a destination (max `M`, or `1D6` if blundered), then click an enemy to fire from the new position *or* press **Confirm move (no shot)** to skip the shot.
 
-	await get_tree().create_timer(2.0).timeout
-	get_tree().quit()
+On success the turn either passes to the opposing seat (if they still have unordered Snobs), or — once both sides' Snobs are done — transitions to `follower_self_order`.
 
-@rpc("any_peer", "call_remote", "reliable")
-func request_action(action_data: Dictionary) -> void:
-	pass
+**follower_self_order** — unordered followers give themselves orders
+- Same target-list + order-button UI as `order_declare`, but limited to the active seat's own unordered non-Snob units.
+- Self-ordering always blunder-checks (no command-range requirement).
+- When no unordered units remain on either side, the round ends: `has_ordered` flags reset, powder smoke clears, round counter advances.
 
-@rpc("authority", "call_remote", "reliable")
-func _send_action_resolved(action: Dictionary, result: Dictionary) -> void:
-	print("Received action_resolved: ", result)
+### 4. Victory
 
-@rpc("authority", "call_remote", "reliable")
-func _send_state_update(state_data: Dictionary) -> void:
-	print("Received state_update")
-```
+- Elimination: all of a seat's units dead → other seat wins.
+- Headless Chicken: all of a seat's Snobs dead → instant loss for that seat.
+- Max rounds (4) elapsed with both sides alive → draw by current rules (Phase 5 will add objectives).
 
-**Run:**
+Server broadcasts `_send_game_ended`; both clients display `VICTORY! / DEFEAT! / DRAW!` in the turn banner.
+
+---
+
+## What to check for
+
+| Area | What should happen | Red flag |
+|---|---|---|
+| Sidebar panel visibility | Exactly one of placement / snob_select / declare / execute / self-order visible at a time, only on active seat's turn | Two panels at once, panel visible on opponent's turn |
+| Command-range diamond | Appears around Snob on declare, matches the target list exactly | Diamond and target list disagree |
+| Order button enable state | Disabled for invalid orders (volley_fire with no range, etc.) | Button stays enabled → server rejects the action |
+| Blunder panic | `+1 panic` in unit info when order blundered | Panic not applied |
+| Move & Shoot two-click | Destination staged → Confirm button appears | Confirm never appears, or first click executes immediately |
+| Round advance | `has_ordered` clears on all units, powder smoke gone | Units stay marked ordered across rounds |
+
+---
+
+## Inspecting logs
+
+Per-process logs land in `test-logs/` (gitignored):
+
 ```bash
-/Applications/Godot.app/Contents/MacOS/Godot --headless -s tests/test_placement_rpc.gd
+tail -f test-logs/server.log
+tail -f test-logs/client1.log
 ```
 
-**Expected server console:**
-```
-[NetworkServer] Received request_action from peer 1234567890: {type: place_unit, unit_id: unit_0, x: 10, y: 30}
-[GameEngine] Validating placement: unit_0 at (10, 30)
-[GameEngine] Placement successful
-```
+The server logs all connection events and `Sending error to peer ...` lines — useful for catching client/server desyncs. Successful actions are not logged by default; if you need richer trace data add `print()` calls to `request_action()` in `godot/server/network_server.gd`.
 
-**Expected client output:**
-```
-Received action_resolved: {success: true, description: "Unit placed at (10, 30)"}
-Received state_update
-```
-
-### 3.3 Test Combat Actions (After Placement Complete)
-
-**Similar test script for movement:**
-
-```gdscript
-var action_data = {
-	"type": "move",
-	"unit_id": "unit_0",
-	"x": 15,
-	"y": 25
-}
-request_action.rpc_id(1, action_data)
-```
-
-**Expected:**
-- Server validates Manhattan distance ≤ movement stat
-- Returns success or error
-- Broadcasts new state
-
-**Test shooting:**
-
-```gdscript
-var action_data = {
-	"type": "shoot",
-	"attacker_id": "unit_0",
-	"target_id": "unit_5"
-}
-request_action.rpc_id(1, action_data)
-```
-
-**Expected:**
-- Server rolls 3d6 (hit, wound, save)
-- Calculates damage
-- Updates target's current_wounds
-- Broadcasts result with dice rolled
-
-### 3.4 Test Victory Detection
-
-**Simulate killing all enemy units:**
-
-Keep attacking until only one player's units remain alive.
-
-**Expected:**
-- `check_victory()` returns winner seat and reason
-- Server broadcasts `_send_game_ended`
-- Game state phase becomes "finished"
+**Logs are wiped** on every `rm -rf test-logs/` (which some of my relaunch commands do). If you're investigating a bug, copy the log out before relaunching.
 
 ---
 
-## Part 4: Full Integration Test (Requires Client UI)
+## Error-handling spot checks
 
-**Prerequisites:**
-- Tasks from `docs/wiki/Phase-4-UI-Tasks.md` completed:
-  - [x] Task 1: lobby.tscn updated with army UI
-  - [x] Task 2: battle.tscn created
-  - [x] Task 3: battle.gd implemented
+These should all surface server-side errors in `test-logs/server.log` and in the client's action log:
 
-### 4.1 Complete Game Flow Test
-
-**Setup:**
-1. Start server: `godot project.godot --server`
-2. Start Client 1
-3. Start Client 2
-
-**Test Procedure:**
-
-#### Step 1: Room Setup (5 minutes)
-1. Client 1: Create room
-2. Client 2: Join room
-3. Both: Check ready
-4. ✅ Verify: Player list shows both ready
-
-#### Step 2: Army Submission (5 minutes)
-1. Client 1: Roll army
-2. Client 1: Submit army
-3. Client 2: Roll army
-4. Client 2: Submit army
-5. ✅ Verify: Both transition to battle scene
-6. ✅ Verify: Turn banner shows "Turn 1 - Player 1"
-
-#### Step 3: Placement Phase (10 minutes)
-
-**Client 1 (Seat 1, Active):**
-1. Click grid at rows 28-31 to place units
-2. ✅ Verify: Units appear as blue rectangles
-3. ✅ Verify: Server accepts placements in deployment zone
-4. ✅ Verify: Server rejects placements outside zone
-5. Place all units
-6. Click "Confirm Placement"
-7. ✅ Verify: Turn banner changes to "Player 2 (Opponent's Turn)"
-
-**Client 2 (Seat 2, Active):**
-1. Click grid at rows 0-3 to place units
-2. ✅ Verify: Units appear as red rectangles
-3. Place all units
-4. Click "Confirm Placement"
-5. ✅ Verify: Turn banner changes to "Turn 1 - Player 1 (Your Turn)"
-6. ✅ Verify: Phase transitions to "Combat"
-
-#### Step 4: Combat Phase - Turn 1 (15 minutes)
-
-**Client 1 (Active):**
-1. Click friendly unit to select
-2. ✅ Verify: Unit highlights in yellow
-3. Click empty cell within movement range
-4. ✅ Verify: Unit moves to new position
-5. ✅ Verify: Action log shows "Unit moved to (x, y)"
-
-**Attack with ranged unit:**
-1. Select unit with ranged weapon
-2. Click enemy unit within weapon range
-3. ✅ Verify: Action log shows dice rolls
-4. ✅ Verify: Action log shows hit/miss/damage result
-5. ✅ Verify: Target's wounds update if hit
-
-**Attack with melee unit:**
-1. Select unit with melee weapon
-2. Move adjacent to enemy
-3. Click enemy unit
-4. ✅ Verify: Charge action resolves
-5. ✅ Verify: Combat results shown
-
-**End activations:**
-1. Activate remaining units (move or attack)
-2. Click "End Turn"
-3. ✅ Verify: Server validates all units activated
-4. ✅ Verify: Turn banner shows "Player 2 (Your Turn)"
-
-**Client 2 (Active):**
-1. Repeat combat actions for Player 2
-2. End turn
-3. ✅ Verify: Turn increments to "Turn 2"
-
-#### Step 5: Continue Until Victory (Variable)
-
-**Keep playing until:**
-- One player's units all dead
-- ✅ Verify: Victory screen appears
-- ✅ Verify: Winning player sees "Victory!"
-- ✅ Verify: Losing player sees "Defeat"
-- ✅ Verify: Reason displayed (e.g., "All enemy units eliminated")
-
----
-
-## Part 5: Error Handling Tests
-
-### 5.1 Invalid Actions
-
-**Test invalid placement:**
-1. Try placing unit outside deployment zone
-2. ✅ Verify: Server returns error
-3. ✅ Verify: Client displays error message
-4. ✅ Verify: State doesn't change
-
-**Test invalid movement:**
-1. Try moving unit beyond movement range
-2. ✅ Verify: Server rejects with error
-3. ✅ Verify: Unit stays in original position
-
-**Test invalid attack:**
-1. Try shooting beyond weapon range
-2. ✅ Verify: Server rejects
-3. Try melee attack from non-adjacent position
-4. ✅ Verify: Server rejects
-
-### 5.2 Turn Ownership
-
-**Test wrong player acting:**
-1. Client 2: Try to act during Client 1's turn
-2. ✅ Verify: Server rejects with "Not your turn"
-3. ✅ Verify: No state change
-
-### 5.3 Network Interruption
-
-**Test client disconnect:**
-1. During game, close Client 2 window
-2. ✅ Verify: Server detects disconnect
-3. ✅ Verify: Room cleaned up
-4. ✅ Verify: Client 1 receives notification (if implemented)
-
-**Test reconnection:**
-1. Client 2 disconnects
-2. Client 2 reconnects and rejoins
-3. ✅ Verify: Game state not preserved (expected for MVP)
-4. ✅ Verify: Room no longer exists or in invalid state
-
----
-
-## Part 6: Performance Testing
-
-### 6.1 Multiple Concurrent Games
-
-**Setup:**
-1. Start server
-2. Create 3 rooms with different room codes
-3. Have 6 clients (2 per room) play simultaneously
-
-**Test:**
-- ✅ Verify: All games run independently
-- ✅ Verify: No state bleeding between rooms
-- ✅ Verify: Server handles multiple request_action RPCs
-- ✅ Verify: No significant lag
-
-### 6.2 Long Games
-
-**Test:**
-1. Play a game with many units (8-10 per side)
-2. Avoid killing units quickly
-3. Play for 10+ turns
-
-**Verify:**
-- ✅ No memory leaks
-- ✅ No slowdown over time
-- ✅ Action log doesn't become unresponsive
-- ✅ State updates remain fast
+- Place outside deployment zone
+- Place on an occupied cell
+- Declare order on Follower outside command range
+- Charge enemy out of `M + move_bonus` range
+- March to a cell farther than allowed
+- Act on opponent's turn (server returns `Not your turn`)
 
 ---
 
 ## Troubleshooting
 
-### Issue: Server won't start
-
-**Check:**
-```bash
-# Port in use?
-lsof -i :9999
-
-# Kill conflicting process
-kill -9 <PID>
-```
-
-### Issue: Client can't connect
-
-**Check:**
-1. Server is running and listening
-2. Firewall allows UDP port 9999
-3. IP address is correct (127.0.0.1 for local)
-
-**Test connection:**
-```bash
-nc -u -v 127.0.0.1 9999
-```
-
-### Issue: Army doesn't display after rolling
-
-**Check:**
-1. lobby.tscn has ArmyScrollContainer node
-2. Node is named exactly "ArmyDisplay" (child of ScrollContainer)
-3. Check console for errors
-
-### Issue: Game doesn't start after both armies submitted
-
-**Check server console for:**
-- `_start_game` called
-- Game state initialized
-- `_send_game_started` broadcast
-
-**Common causes:**
-- Army validation failed (not 5-10 units)
-- Network RPC not received
-- battle.tscn doesn't exist (expected if UI not done)
-
-### Issue: Actions rejected by server
-
-**Check:**
-1. It's your turn (active_seat matches your seat)
-2. Unit belongs to you
-3. Action is valid for current phase
-4. Unit hasn't already activated (combat phase)
-
-**Enable verbose logging:**
-Add print statements in `network_server.gd` `request_action()`:
-```gdscript
-print("[NetworkServer] Action: ", action_data)
-print("[NetworkServer] Active seat: ", state.active_seat)
-print("[NetworkServer] Requesting peer seat: ", player["seat"])
-```
-
-### Issue: Tests fail
-
-**Phase 1 tests:**
-- Check working directory is `godot/`
-- Verify mvp.json exists and is valid
-
-**Phase 4 engine tests:**
-- 6 failures expected (shooting edge cases)
-- More failures = check recent code changes
-- Review test output for specific errors
+| Symptom | Likely cause |
+|---|---|
+| `Identifier 'NetworkClient' not declared` on client startup | Project class cache stale. Run `$GODOT --headless --editor --quit` once to rebuild it. |
+| Server logs `Mode: CLIENT` | `--server` flag not making it through. Check `scripts/test-stack.sh` invocation; `NetworkManager._ready()` checks both `get_cmdline_args()` and `get_cmdline_user_args()`. |
+| One client's order button stays disabled when it shouldn't | Client-side `_can_receive_order()` in `battle.gd` disagrees with engine's `declare_order` validation. Either fix the mismatch or let the server reject the attempt. |
+| Stuck in `order_execute` with no valid destination | Blundered move order with tight dice. Expected behavior — complete the order (even at distance 0 by clicking own current cell) to advance. |
 
 ---
 
-## Test Results Template
+## See Also
 
-Copy this template to document your test results:
-
-```markdown
-# Phase 4 Test Results
-
-**Date:** YYYY-MM-DD
-**Tester:** [Name]
-**Branch:** feature/phase-3b-4-battle
-**Commit:** [git rev-parse HEAD]
-
-## Automated Tests
-- [ ] Phase 1 tests: ___/19 passing
-- [ ] Phase 4 engine tests: ___/34 passing (6 expected failures)
-- [ ] UI instantiation tests: ___/___ passing
-
-## Phase 3b Army Submission
-- [ ] Server starts successfully
-- [ ] Clients connect to server
-- [ ] Room creation works
-- [ ] Room joining works
-- [ ] Ready system works
-- [ ] Army rolling displays units
-- [ ] Army submission sends to server
-- [ ] Both armies submitted triggers game start
-
-## Phase 4 Server Integration
-- [ ] Game state initializes correctly
-- [ ] Placement actions validated
-- [ ] Combat actions validated
-- [ ] Turn switching works
-- [ ] Victory detection works
-
-## Phase 4 Client UI (Pending)
-- [ ] Battle scene loads
-- [ ] Units render on grid
-- [ ] Placement phase UI works
-- [ ] Combat phase UI works
-- [ ] Action log displays
-- [ ] Victory screen shows
-
-## Error Handling
-- [ ] Invalid actions rejected
-- [ ] Turn ownership enforced
-- [ ] Error messages displayed
-
-## Issues Found
-[List any bugs or unexpected behavior]
-
-## Notes
-[Additional observations]
-```
-
----
-
-## Next Steps
-
-After completing these tests:
-
-1. **If all automated tests pass:**
-   - Proceed with client UI implementation
-   - Follow `docs/wiki/Phase-4-UI-Tasks.md`
-
-2. **If manual tests pass:**
-   - Document results
-   - Update GitHub issues
-   - Create demo video (optional)
-
-3. **If issues found:**
-   - Create GitHub issues for bugs
-   - Reference this testing guide in issue description
-   - Include steps to reproduce
-
----
-
-## References
-
-- **Engine Tests:** `godot/tests/test_game_engine.gd`
-- **UI Implementation Guide:** `docs/wiki/Phase-4-UI-Tasks.md`
-- **Debugging Guide:** `docs/wiki/Debugging-Guide.md`
-- **Server Code:** `godot/server/game_engine.gd`, `godot/server/network_server.gd`
-- **Client Code:** `godot/client/scenes/lobby.gd`
+- [Testing Guidelines](Testing-Guidelines.md) — writing automated tests
+- [Debugging Guide](Debugging-Guide.md) — general troubleshooting patterns
+- [Project Setup](Project-Setup.md) — Godot install + `$GODOT` path per platform
