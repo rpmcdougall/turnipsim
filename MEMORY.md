@@ -17,7 +17,7 @@
 | 4.5 — v17 data model | ✅ | PR #30 (issue #27) |
 | 4.5 — v17 order mechanics | ✅ | **PR #32 (issue #31)** — this session |
 | 5 — Polish | 🚧 | #22 In Progress (partial victory conditions), #21 Todo (visual polish) |
-| 5b — Army submission UI | ✅ | Issue #20 Done |
+| 5b — Army submission UI | 🚧 | #28 Todo — lobby currently picks random preset; real builder not yet implemented (old #20 was a placeholder) |
 | 6 — Deploy | ⬜ | #23–25 Todo |
 | 7 — Cult mechanics | ⬜ | #29 Todo |
 

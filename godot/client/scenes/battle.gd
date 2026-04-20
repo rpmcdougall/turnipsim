@@ -939,16 +939,121 @@ func _on_action_resolved(action: Dictionary, result: Dictionary) -> void:
 
 
 func _on_game_ended(winner_seat: int, reason: String) -> void:
-	var message = ""
+	var outcome := ""
+	var title_color := Color.WHITE
 	if winner_seat == my_seat:
-		message = "VICTORY! " + reason
+		outcome = "VICTORY"
+		title_color = Color(0.4, 0.9, 0.4)
 	elif winner_seat == 0:
-		message = "DRAW! " + reason
+		outcome = "DRAW"
+		title_color = Color(0.85, 0.85, 0.55)
 	else:
-		message = "DEFEAT! " + reason
+		outcome = "DEFEAT"
+		title_color = Color(0.95, 0.45, 0.45)
 
-	turn_banner.text = message
-	_add_log_entry("=== GAME OVER: " + message + " ===")
+	turn_banner.text = "%s — %s" % [outcome, reason]
+	_add_log_entry("=== GAME OVER: %s — %s ===" % [outcome, reason])
+	_show_game_over_overlay(outcome, title_color, reason)
+
+
+func _show_game_over_overlay(outcome: String, title_color: Color, reason: String) -> void:
+	# Guard against double-firing
+	if has_node("GameOverOverlay"):
+		return
+
+	var rounds_played: int = 0
+	var my_units_total: int = 0
+	var my_units_alive: int = 0
+	var enemy_units_total: int = 0
+	var enemy_units_alive: int = 0
+	if current_game_state:
+		# current_round advances past the last completed round; clamp to max_rounds for display
+		rounds_played = mini(current_game_state.current_round, current_game_state.max_rounds)
+		for unit in current_game_state.units:
+			var is_mine := unit.owner_seat == my_seat
+			if is_mine:
+				my_units_total += 1
+				if not unit.is_dead:
+					my_units_alive += 1
+			else:
+				enemy_units_total += 1
+				if not unit.is_dead:
+					enemy_units_alive += 1
+
+	var overlay := ColorRect.new()
+	overlay.name = "GameOverOverlay"
+	overlay.color = Color(0, 0, 0, 0.65)
+	overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	overlay.mouse_filter = Control.MOUSE_FILTER_STOP
+	add_child(overlay)
+
+	var center := CenterContainer.new()
+	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	overlay.add_child(center)
+
+	var panel := PanelContainer.new()
+	panel.custom_minimum_size = Vector2(420, 0)
+	center.add_child(panel)
+
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 12)
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 24)
+	margin.add_theme_constant_override("margin_right", 24)
+	margin.add_theme_constant_override("margin_top", 20)
+	margin.add_theme_constant_override("margin_bottom", 20)
+	panel.add_child(margin)
+	margin.add_child(vbox)
+
+	var title := Label.new()
+	title.text = outcome
+	title.add_theme_font_size_override("font_size", 36)
+	title.add_theme_color_override("font_color", title_color)
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	vbox.add_child(title)
+
+	var reason_label := Label.new()
+	reason_label.text = reason
+	reason_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	reason_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	reason_label.custom_minimum_size = Vector2(380, 0)
+	vbox.add_child(reason_label)
+
+	var separator := HSeparator.new()
+	vbox.add_child(separator)
+
+	var stats := VBoxContainer.new()
+	stats.add_theme_constant_override("separation", 4)
+	vbox.add_child(stats)
+
+	var rounds_line := Label.new()
+	rounds_line.text = "Rounds played: %d" % rounds_played
+	stats.add_child(rounds_line)
+
+	var my_line := Label.new()
+	my_line.text = "Your units: %d / %d surviving (%d lost)" % [
+		my_units_alive, my_units_total, my_units_total - my_units_alive
+	]
+	stats.add_child(my_line)
+
+	var enemy_line := Label.new()
+	enemy_line.text = "Enemy units: %d / %d surviving (%d lost)" % [
+		enemy_units_alive, enemy_units_total, enemy_units_total - enemy_units_alive
+	]
+	stats.add_child(enemy_line)
+
+	var button := Button.new()
+	button.text = "Return to Main Menu"
+	button.pressed.connect(_on_return_to_menu_pressed)
+	vbox.add_child(button)
+
+
+func _on_return_to_menu_pressed() -> void:
+	print("[Battle] Returning to main menu")
+	if multiplayer.multiplayer_peer != null:
+		multiplayer.multiplayer_peer = null
+	NetworkManager.reset_seat()
+	get_tree().change_scene_to_file("res://client/main.tscn")
 
 
 func _on_error_received(message: String) -> void:
