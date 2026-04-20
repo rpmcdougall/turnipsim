@@ -911,6 +911,27 @@ static func check_victory(state: Types.GameState) -> Dictionary:
 	if snobs_alive_2 == 0 and snobs_alive_1 > 0:
 		return {"winner": 1, "reason": "Player 2 lost all Snobs (Headless Chicken)"}
 
+	# Time limit reached: tiebreak by surviving units, then by model count
+	if state.current_round > state.max_rounds:
+		if units_alive_1 > units_alive_2:
+			return {"winner": 1, "reason": "Time expired — Player 1 holds the field"}
+		if units_alive_2 > units_alive_1:
+			return {"winner": 2, "reason": "Time expired — Player 2 holds the field"}
+		var models_alive_1: int = 0
+		var models_alive_2: int = 0
+		for unit in state.units:
+			if unit.is_dead:
+				continue
+			if unit.owner_seat == 1:
+				models_alive_1 += unit.model_count
+			else:
+				models_alive_2 += unit.model_count
+		if models_alive_1 > models_alive_2:
+			return {"winner": 1, "reason": "Time expired — Player 1 has more models standing"}
+		if models_alive_2 > models_alive_1:
+			return {"winner": 2, "reason": "Time expired — Player 2 has more models standing"}
+		return {"winner": 0, "reason": "Time expired — the field is contested (Draw)"}
+
 	return {"winner": 0, "reason": ""}
 
 

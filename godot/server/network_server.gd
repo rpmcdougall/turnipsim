@@ -307,9 +307,10 @@ func request_action(action_data: Dictionary) -> void:
 	# Update stored state
 	active_games[room.code] = result.new_state
 
-	# Check victory
+	# Check victory (also handles max-rounds tiebreak / draw)
 	var victory = GameEngine.check_victory(result.new_state)
-	if victory["winner"] != 0:
+	var game_over: bool = victory["winner"] != 0 or result.new_state.phase == "finished"
+	if game_over:
 		result.new_state.phase = "finished"
 		result.new_state.winner_seat = victory["winner"]
 
@@ -326,7 +327,7 @@ func request_action(action_data: Dictionary) -> void:
 			result.new_state.to_dict()
 		)
 
-		if victory["winner"] != 0:
+		if game_over:
 			NetworkClient._send_game_ended.rpc_id(
 				p["peer_id"],
 				victory["winner"],

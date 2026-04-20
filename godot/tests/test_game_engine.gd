@@ -644,6 +644,43 @@ func _test_victory_conditions() -> void:
 		return victory["winner"] == 0 and victory["reason"] == ""
 	)
 
+	_test("Max-rounds tiebreak: more surviving units wins", func():
+		var state = _mock_orders_state()
+		state.current_round = 5
+		state.max_rounds = 4
+		# Kill one seat 2 non-snob unit so seat 1 has more alive
+		for unit in state.units:
+			if unit.owner_seat == 2 and not unit.is_snob():
+				unit.is_dead = true
+				break
+
+		var victory = GameEngine.check_victory(state)
+		return victory["winner"] == 1 and "Time expired" in victory["reason"]
+	)
+
+	_test("Max-rounds tiebreak: equal units, more models wins", func():
+		var state = _mock_orders_state()
+		state.current_round = 5
+		state.max_rounds = 4
+		# Both sides have same unit count alive; give seat 2 an extra model
+		for unit in state.units:
+			if unit.owner_seat == 2 and not unit.is_snob():
+				unit.model_count += 5
+				break
+
+		var victory = GameEngine.check_victory(state)
+		return victory["winner"] == 2 and "more models" in victory["reason"]
+	)
+
+	_test("Max-rounds tiebreak: fully tied = draw", func():
+		var state = _mock_orders_state()
+		state.current_round = 5
+		state.max_rounds = 4
+
+		var victory = GameEngine.check_victory(state)
+		return victory["winner"] == 0 and "Draw" in victory["reason"]
+	)
+
 
 # =============================================================================
 # MOCK STATE GENERATORS
