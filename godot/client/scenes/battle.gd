@@ -750,11 +750,14 @@ func _render_order_execute_panel() -> void:
 		"move_and_shoot":
 			var move = unit.base_stats.movement if unit else 0
 			if pending_move_x == -1:
-				order_execute_instruction.text = "Click destination (max %d cells)." % move
+				order_execute_instruction.text = "Click destination (max %d cells), or Skip to stay put." % move
+				order_execute_confirm_button.text = "Skip (no move, no shot)"
+				order_execute_confirm_button.visible = true
 			else:
-				order_execute_instruction.text = "Destination: (%d,%d).\nClick enemy to shoot, or Confirm to skip." % [
+				order_execute_instruction.text = "Destination: (%d,%d).\nClick enemy to shoot, or Confirm to skip the shot." % [
 					pending_move_x, pending_move_y
 				]
+				order_execute_confirm_button.text = "Confirm move (no shot)"
 				order_execute_confirm_button.visible = true
 
 
@@ -812,8 +815,12 @@ func _on_execute_confirm_pressed() -> void:
 	if order_type == "volley_fire" or order_type == "charge":
 		_send_execute_order({"fizzle": true})
 		return
-	# Move-and-shoot: commit the staged destination with no target
+	# Move-and-shoot: no staged destination → stay put. Otherwise commit.
 	if pending_move_x == -1:
+		var unit = _get_unit_by_id(current_game_state.current_order_unit_id)
+		if not unit:
+			return
+		_send_execute_order({"x": unit.x, "y": unit.y})
 		return
 	_send_execute_order({"x": pending_move_x, "y": pending_move_y})
 
