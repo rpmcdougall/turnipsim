@@ -1,91 +1,102 @@
 # Contributing to Turnip28 Simulator
 
-## Branching Strategy
+Environment setup lives in [`docs/wiki/Project-Setup.md`](docs/wiki/Project-Setup.md). This file covers the contribution workflow: branching, testing, commits, PRs.
 
-We use a feature branch workflow for all development:
+## Branching strategy
 
-### For New Features (Phases 3+)
+Feature-branch workflow. Every non-trivial change ships via PR against `main`.
 
-1. **Create a feature branch from main:**
-   ```bash
-   git checkout main
-   git pull origin main
-   git checkout -b feature/phase-3-networking
-   ```
+```bash
+git checkout main
+git pull
+git checkout -b feature/<short-topic>
+# ... commits ...
+git push -u origin feature/<short-topic>
+gh pr create --base main --fill
+```
 
-2. **Make modular commits on the branch:**
-   - Follow conventional commit format
-   - One logical unit per commit
-   - Use `Co-Authored-By` trailer
+**Naming:**
 
-3. **Push the branch to GitHub:**
-   ```bash
-   git push -u origin feature/phase-3-networking
-   ```
+- `feature/<topic>` — new functionality
+- `fix/<topic>` — bug fixes
+- `docs/<topic>` — doc-only changes
+- `chore/<topic>` — tooling, CI, etc.
 
-4. **Create a Pull Request:**
-   - Use `gh pr create` or GitHub web UI
-   - Reference the phase/milestone in the description
-   - Wait for CI tests to pass (GitHub Actions)
+Topic should be terse and descriptive. Prefer `feature/order-mechanics` over `feature/phase-4-part-3`.
 
-5. **Merge after approval:**
-   - Use "Squash and merge" or "Create a merge commit" (your choice)
-   - Delete the feature branch after merge
+## Local testing
 
-### Branch Naming Convention
-
-- Feature work: `feature/<phase-name>` (e.g., `feature/phase-3-networking`)
-- Bug fixes: `fix/<issue-description>` (e.g., `fix/army-roller-infinite-loop`)
-- Documentation: `docs/<topic>` (e.g., `docs/deployment-guide`)
-
-## CI/CD
-
-### GitHub Actions
-
-`.github/workflows/tests.yml` runs automatically on:
-- Pull requests to `main`
-- Pushes to `main`
-
-**Tests run:**
-1. Phase 1 game logic (19 tests)
-2. UI scene instantiation validation
-
-**Runtime:** ~10 seconds on Ubuntu runner
-
-### Local Testing
-
-Before pushing, run tests locally:
+Set `$GODOT` per platform (see `docs/wiki/Project-Setup.md`), then from the repo root:
 
 ```bash
 cd godot/
-godot --headless --script tests/test_runner.gd
-godot --headless --script tests/test_ui_instantiate.gd
+
+# Automated suites — run both before pushing
+$GODOT --headless -s tests/test_runner.gd         # 19 tests: types, ruleset, roster
+$GODOT --headless -s tests/test_game_engine.gd    # 48 tests: order state machine, combat
 ```
 
-## Commit Message Format
+For end-to-end multiplayer smoke tests, use the cross-platform launcher:
+
+```bash
+scripts/test-stack.sh          # headless server + 2 clients
+scripts/test-stack.sh --solo   # server + 1 client
+```
+
+See [`docs/wiki/Manual-Testing-Guide.md`](docs/wiki/Manual-Testing-Guide.md) for the procedure.
+
+## CI
+
+`.github/workflows/tests.yml` runs on every PR to `main` and every push to `main`:
+
+1. Download Godot 4.6.2 + import project
+2. `test_runner.gd` — Phase 1 suite
+3. `test_ui_instantiate.gd` — scene-loading smoke test
+4. `test_phase3_scenes.gd` — lobby/networking scene smoke test
+
+`.github/workflows/sync-wiki.yml` runs on push to `main` when `docs/wiki/**` changes: mirrors `docs/wiki/*.md` into `<repo>.wiki.git` so the GitHub Wiki stays in sync with the tracked docs.
+
+> **Known gap:** CI does not currently run `test_game_engine.gd` (the 48-test engine suite). Worth adding as an additional step in `.github/workflows/tests.yml`.
+
+## Commit format
+
+Conventional commits with a `Co-Authored-By` trailer when Claude helped:
 
 ```
 <type>(<scope>): <description>
 
-[Optional body]
+[Optional body explaining WHY, not WHAT]
 
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
-
-Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 ```
 
 **Types:** `feat`, `fix`, `docs`, `test`, `refactor`, `ci`, `chore`
+**Scopes:** `engine`, `client`, `server`, `game`, `types`, `autoload`, `scripts`, etc.
 
-**Scopes:** `game`, `client`, `server`, `test`, `plan`, etc.
+One logical unit per commit. For multi-layer features, commit each layer as you validate it (engine → tests → server routing → client) rather than batching.
 
-## Development Phases
+## Documentation source of truth
 
-- [x] **Phase 0** — Project scaffold
-- [x] **Phase 1** — Game data layer
-- [x] **Phase 2** — Army rolling UI
-- [ ] **Phase 3** — ENet networking, lobby, room management
-- [ ] **Phase 4** — Battle gameplay (server-authoritative)
-- [ ] **Phase 5** — Polish, multiple rulesets
-- [ ] **Phase 6** — Export presets, deployment
+- Developer docs live in `docs/wiki/*.md` and auto-sync to the GitHub Wiki on merge to `main`.
+- Architecture decisions and project conventions: `CLAUDE.md`.
+- Phase plan: `turnip28-sim-plan-godot.md`.
+- Session memory: `MEMORY.md` + `memory/checkpoint-YYYY-MM-DD-<topic>.md`.
 
-Each phase should be developed on a feature branch and merged via PR.
+Don't create root-level `PHASE<N>_TESTING.md` or similar — they drift. Put testing procedure in the wiki.
+
+## Phase status
+
+| Phase | Status |
+|---|---|
+| 0 — Scaffold | ✅ |
+| 1 — Game data | ✅ |
+| 2 — Army UI | ✅ (superseded by Phase 5b) |
+| 3 — ENet + lobby | ✅ |
+| 3b — Army submission | ✅ |
+| 4 — Battle engine + v17 data model + v17 order mechanics | ✅ |
+| 5 — Polish | 🚧 partial (victory conditions in progress) |
+| 5b — Army submission UI | ✅ |
+| 6 — Deploy | ⬜ |
+| 7 — Cult mechanics | ⬜ |
+
+See `MEMORY.md` for detail, or the [project board](https://github.com/users/rpmcdougall/projects/1).
