@@ -283,12 +283,17 @@ static func declare_order(state: Types.GameState, unit_id: String, order_type: S
 	new_state.current_order_type = order_type
 	new_state.current_order_blundered = blundered
 
-	# Compute move bonus for march/charge (stored so client can show range)
+	# Compute move bonus for march/charge (stored so client can show range).
+	# Also for blundered move_and_shoot, since _execute_move_and_shoot reads
+	# move_bonus as the capped movement (1D6) when blundered.
 	var move_bonus = 0
 	if order_type in ["march", "charge"]:
 		if move_dice.size() >= 2:
 			move_bonus = move_dice[0] + move_dice[1] if not blundered else move_dice[0]
 		elif move_dice.size() >= 1:
+			move_bonus = move_dice[0]
+	elif order_type == "move_and_shoot" and blundered:
+		if move_dice.size() >= 1:
 			move_bonus = move_dice[0]
 	new_state.current_order_move_bonus = move_bonus
 
@@ -377,6 +382,9 @@ static func declare_self_order(state: Types.GameState, unit_id: String, order_ty
 		if move_dice.size() >= 2:
 			move_bonus = move_dice[0] + move_dice[1] if not blundered else move_dice[0]
 		elif move_dice.size() >= 1:
+			move_bonus = move_dice[0]
+	elif order_type == "move_and_shoot" and blundered:
+		if move_dice.size() >= 1:
 			move_bonus = move_dice[0]
 	new_state.current_order_move_bonus = move_bonus
 

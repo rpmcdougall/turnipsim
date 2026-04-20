@@ -382,6 +382,41 @@ func _test_execute_move_and_shoot() -> void:
 			and result.new_state.units[1].current_wounds == 0)
 	)
 
+	_test("move_and_shoot: blundered caps movement to 1D6 (first die)", func():
+		var state = _mock_orders_state_ranged()
+		state = GameEngine.select_snob(state, state.units[0].id).new_state
+		# Order FOLLOWER so blunder applies. Make Fodder ranged for move_and_shoot legality.
+		state.units[2].base_stats.weapon_range = 12
+		state.units[2].model_count = 1
+		state.units[2].max_models = 1
+		state.units[2].x = 12; state.units[2].y = 15
+		# Blunder (die=1), move_dice=[3, 5] → bonus should be 3, so max_move=3.
+		state = GameEngine.declare_order(state, state.units[2].id, "move_and_shoot", 1, [3, 5]).new_state
+
+		# (15, 15) from (12, 15) = distance 3. Exactly at the blundered cap.
+		var result = GameEngine.execute_order(state, {"x": 15, "y": 15}, [])
+
+		return (result.success
+			and result.new_state.units[2].x == 15
+			and result.new_state.units[2].y == 15)
+	)
+
+	_test("move_and_shoot: blundered rejects move beyond 1D6", func():
+		var state = _mock_orders_state_ranged()
+		state = GameEngine.select_snob(state, state.units[0].id).new_state
+		state.units[2].base_stats.weapon_range = 12
+		state.units[2].model_count = 1
+		state.units[2].max_models = 1
+		state.units[2].x = 12; state.units[2].y = 15
+		# Blunder, bonus = 2 (first die)
+		state = GameEngine.declare_order(state, state.units[2].id, "move_and_shoot", 1, [2, 5]).new_state
+
+		# Distance 3 > 2 → rejected
+		var result = GameEngine.execute_order(state, {"x": 15, "y": 15}, [])
+
+		return not result.success and "movement range" in result.error
+	)
+
 	_test("move_and_shoot: reject move beyond M", func():
 		var state = _mock_orders_state_ranged()
 		state = GameEngine.select_snob(state, state.units[0].id).new_state
