@@ -63,8 +63,8 @@ Each round, players alternate picking Snobs to "Make Ready." The sidebar is phas
 
 **order_declare** — choose target + order
 - Sidebar shows the Made-Ready Snob's type and command range.
-- A translucent Manhattan diamond overlays the board around the Snob — any cell inside is within command range.
-- Target list shows the Snob itself (self-order) plus alive unordered Followers inside the diamond.
+- A translucent Euclidean circle overlays the board around the Snob — any cell inside is within command range.
+- Target list shows the Snob itself (self-order) plus alive unordered Followers inside the circle.
 - Four order buttons (Volley Fire / Move & Shoot / March / Charge) enable or disable based on the selected target's capabilities (weapon range, powder smoke, immobile special rule).
 - Pick a target, pick an order → server rolls the blunder die + 2D6 move dice, transitions to `order_execute`. A blundered die (1) adds a panic token and reduces march bonus to the first die only. Snob self-orders never blunder.
 
@@ -123,7 +123,7 @@ The fastest way to force each path without an hour-long game:
 | Area | What should happen | Red flag |
 |---|---|---|
 | Sidebar panel visibility | Exactly one of placement / snob_select / declare / execute / self-order visible at a time, only on active seat's turn | Two panels at once, panel visible on opponent's turn |
-| Command-range diamond | Appears around Snob on declare, matches the target list exactly | Diamond and target list disagree |
+| Command-range circle | Appears around Snob on declare, matches the target list exactly | Circle and target list disagree |
 | Order button enable state | Disabled for invalid orders (volley_fire with no range, etc.) | Button stays enabled → server rejects the action |
 | Blunder panic | `+1 panic` in unit info when order blundered | Panic not applied |
 | Move & Shoot two-click | Destination staged → Confirm button appears | Confirm never appears, or first click executes immediately |
