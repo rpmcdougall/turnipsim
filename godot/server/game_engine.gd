@@ -724,10 +724,14 @@ static func _execute_charge(state: Types.GameState, unit: Types.UnitState, param
 	var panic = _panic_test(new_target, panic_die, fearless_die)
 
 	if not panic["passed"]:
-		# Target failed panic test — gains +1 panic token (v17 p.19).
-		# Full retreat movement deferred to #53; for now charger moves
-		# adjacent and melee is skipped (represents target fleeing).
+		# Target failed panic test — gains +1 panic token (v17 p.19),
+		# then retreats away from nearest enemy. Charger moves to the
+		# now-vacated adjacent cell. No melee.
 		new_target.panic_tokens = mini(new_target.panic_tokens + 1, 6)
+		var retreat = _execute_retreat(new_state, target_id)
+
+		# Charger advances to adjacent cell (target may have vacated it,
+		# or stayed put if Stubborn Fanatics).
 		new_unit.x = charge_dest.x
 		new_unit.y = charge_dest.y
 
@@ -745,15 +749,23 @@ static func _execute_charge(state: Types.GameState, unit: Types.UnitState, param
 			"blundered": state.current_order_blundered,
 			"panic_test": panic,
 			"target_fled": true,
+			"retreat": retreat,
 			"hits": 0, "saves": 0, "unsaved_wounds": 0
 		})
 
 		result.success = true
 		result.new_state = new_state
 		result.dice_rolled = [panic_die, fearless_die]
+		var retreat_text = ""
+		if retreat["destroyed"]:
+			retreat_text = " — fled off board! [DESTROYED]"
+		elif retreat["stubborn_held"]:
+			retreat_text = " — Stubborn Fanatics held!"
+		elif retreat["retreated"]:
+			retreat_text = " — retreated to (%d,%d)" % [retreat["to_x"], retreat["to_y"]]
 		var fearless_text = " (Fearless failed)" if panic["used_fearless"] else ""
-		result.description = "Charge! %s → %s — target panicked and fled!%s" % [
-			unit.unit_type, target.unit_type, fearless_text
+		result.description = "Charge! %s → %s — target panicked%s%s" % [
+			unit.unit_type, target.unit_type, fearless_text, retreat_text
 		]
 		return result
 
@@ -945,6 +957,150 @@ static func _panic_test(unit: Types.UnitState, panic_die: int, fearless_die: int
 
 	result["passed"] = false
 	return result
+
+
+# =============================================================================
+# RETREAT
+# =============================================================================
+
+## Execute retreat for a unit. Mutates state in place.
+## v17 core p.20: move directly away from closest enemy, 2" per panic token
+## (min 1"). Board edge = unit destroyed. Stubborn Fanatics never retreat.
+##
+## Returns { retreated, destroyed, from_x, from_y, to_x, to_y, distance,
+##           stubborn_held }.
+## DT tests for crossing Followers deferred to terrain system (#58).
+static func _execute_retreat(state: Types.GameState, unit_id: String) -> Dictionary:
+	var unit = _find_unit_in(state, unit_id)
+	var result = {
+		"retreated": false,
+		"destroyed": false,
+		"from_x": unit.x, "from_y": unit.y,
+		"to_x": unit.x, "to_y": unit.y,
+		"distance": 0,
+		"stubborn_held": false,
+	}
+
+	if not unit or unit.is_dead:
+		return result
+
+	# Stubborn Fanatics: never retreat (Stump Gun)
+	if "stubborn_fanatics" in unit.special_rules:
+		result["stubborn_held"] = true
+		return result
+
+	# Retreat distance: 2" per panic token, minimum 1
+	var retreat_dist: int = maxi(unit.panic_tokens * 2, 1)
+	result["distance"] = retreat_dist
+
+	# Direction: away from nearest alive enemy
+	var nearest_enemy = _find_nearest_enemy(state, unit)
+	if not nearest_enemy:
+		# No enemies alive — nowhere to retreat from. Stay put.
+		return result
+
+	var dx: float = float(unit.x - nearest_enemy.x)
+	var dy: float = float(unit.y - nearest_enemy.y)
+	var dist: float = sqrt(dx * dx + dy * dy)
+	if dist < 0.001:
+		# On top of enemy (shouldn't happen). Default retreat direction: toward own deployment zone.
+		dy = 1.0 if unit.owner_seat == 1 else -1.0
+		dx = 0.0
+		dist = 1.0
+
+	# Normalize direction
+	dx /= dist
+	dy /= dist
+
+	# Ideal retreat destination
+	var ideal_x: float = float(unit.x) + dx * float(retreat_dist)
+	var ideal_y: float = float(unit.y) + dy * float(retreat_dist)
+	var target_x: int = clampi(roundi(ideal_x), 0, BOARD_WIDTH - 1)
+	var target_y: int = clampi(roundi(ideal_y), 0, BOARD_HEIGHT - 1)
+
+	# Board edge check: if the ideal position is off the board, unit is destroyed.
+	if roundi(ideal_x) < 0 or roundi(ideal_x) >= BOARD_WIDTH or roundi(ideal_y) < 0 or roundi(ideal_y) >= BOARD_HEIGHT:
+		unit.is_dead = true
+		unit.model_count = 0
+		unit.x = -1
+		unit.y = -1
+		result["retreated"] = true
+		result["destroyed"] = true
+		result["to_x"] = -1
+		result["to_y"] = -1
+		return result
+
+	# Find the best valid cell near the target
+	var dest = _find_retreat_cell(state, unit, target_x, target_y)
+	if dest.x == -1:
+		# No valid cell found — stay in place (edge case, shouldn't normally happen)
+		return result
+
+	unit.x = dest.x
+	unit.y = dest.y
+	result["retreated"] = true
+	result["to_x"] = dest.x
+	result["to_y"] = dest.y
+	return result
+
+
+## Find the nearest alive enemy unit to the given unit.
+static func _find_nearest_enemy(state: Types.GameState, unit: Types.UnitState) -> Types.UnitState:
+	var best: Types.UnitState = null
+	var best_dist: float = 99999.0
+	for u in state.units:
+		if u.is_dead or u.owner_seat == unit.owner_seat:
+			continue
+		if u.x < 0 or u.y < 0:
+			continue
+		var d := _grid_distance(unit.x, unit.y, u.x, u.y)
+		if d < best_dist:
+			best_dist = d
+			best = u
+	return best
+
+
+## Find a valid retreat destination cell near (target_x, target_y).
+## Searches the target cell first, then spirals outward. Returns Vector2i(-1,-1)
+## if nothing found within a reasonable radius.
+static func _find_retreat_cell(state: Types.GameState, unit: Types.UnitState, target_x: int, target_y: int) -> Vector2i:
+	# Try the ideal cell first
+	if _is_valid_retreat_dest(state, unit, target_x, target_y):
+		return Vector2i(target_x, target_y)
+
+	# Spiral outward looking for an alternative
+	for radius in range(1, 6):
+		var best = Vector2i(-1, -1)
+		var best_dist: float = 99999.0
+		for dy in range(-radius, radius + 1):
+			for dx in range(-radius, radius + 1):
+				if abs(dx) != radius and abs(dy) != radius:
+					continue  # Skip inner cells already checked
+				var cx: int = target_x + dx
+				var cy: int = target_y + dy
+				if _is_valid_retreat_dest(state, unit, cx, cy):
+					var d := _grid_distance(target_x, target_y, cx, cy)
+					if d < best_dist:
+						best_dist = d
+						best = Vector2i(cx, cy)
+		if best.x != -1:
+			return best
+
+	return Vector2i(-1, -1)
+
+
+## Is this cell a valid retreat destination?
+static func _is_valid_retreat_dest(state: Types.GameState, unit: Types.UnitState, x: int, y: int) -> bool:
+	if x < 0 or x >= BOARD_WIDTH or y < 0 or y >= BOARD_HEIGHT:
+		return false
+	# Can't land on an occupied cell
+	for u in state.units:
+		if not u.is_dead and u.id != unit.id and u.x == x and u.y == y:
+			return false
+	# Can't land on an objective (v17 p.22)
+	if _is_objective_at(state, x, y):
+		return false
+	return true
 
 
 # =============================================================================

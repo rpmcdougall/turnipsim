@@ -21,6 +21,7 @@ func _init() -> void:
 	_test_execute_march()
 	_test_execute_charge()
 	_test_panic_test()
+	_test_retreat()
 	_test_advance_flow()
 	_test_victory_conditions()
 	_test_objectives()
@@ -690,10 +691,16 @@ func _test_panic_test() -> void:
 		var params = {"target_id": state.units[1].id, "panic_die": 4, "fearless_die": 1}
 		var result = GameEngine.execute_order(state, params, [5, 5, 1, 1])
 
+		# After +1 panic token, target has 5 tokens → retreat 10 cells (2×5).
+		# Target was at (15,10), nearest enemy (charger) at (10,10).
+		# Retreat direction: away from charger → positive X.
+		# Ideal destination: (25, 10).
 		return (result.success
-			and result.new_state.units[0].x == 14  # charger still moved adjacent
+			and result.new_state.units[0].x == 14  # charger moved adjacent
 			and not result.new_state.units[1].is_dead  # no melee happened
 			and result.new_state.units[1].panic_tokens == 5  # +1 from failed test
+			and result.new_state.units[1].x == 25  # retreated 10 cells right
+			and result.new_state.units[1].y == 10
 			and result.new_state.units[1].current_wounds == 0)
 	)
 
@@ -733,6 +740,90 @@ func _test_panic_test() -> void:
 			and result.new_state.units[0].x == 14  # charger moved
 			and result.new_state.units[1].panic_tokens == 4  # no extra panic (passed)
 			and result.new_state.units[1].model_count < 6)  # melee happened, took casualties
+	)
+
+
+func _test_retreat() -> void:
+	print("\n[Test Suite: Retreat]")
+
+	_test("retreat: moves away from nearest enemy by 2x panic tokens", func():
+		var state = _mock_orders_state()
+		# Unit at (20,15), enemy at (15,15). Retreat direction: +X.
+		# 3 tokens → distance 6.
+		state.units[2].x = 20; state.units[2].y = 15
+		state.units[2].panic_tokens = 3
+		state.units[1].x = 15; state.units[1].y = 15  # nearest enemy
+		var result = GameEngine._execute_retreat(state, state.units[2].id)
+		return (result["retreated"]
+			and state.units[2].x == 26  # 20 + 6
+			and state.units[2].y == 15)
+	)
+
+	_test("retreat: diagonal direction works correctly", func():
+		var state = _mock_orders_state()
+		# Unit at (20,20), enemy at (17,17). Direction: +X,+Y (normalized).
+		# 2 tokens → distance 4. Diagonal: 4/√2 ≈ 2.83 each axis → (23,23).
+		state.units[2].x = 20; state.units[2].y = 20
+		state.units[2].panic_tokens = 2
+		state.units[1].x = 17; state.units[1].y = 17
+		var result = GameEngine._execute_retreat(state, state.units[2].id)
+		return (result["retreated"]
+			and state.units[2].x == 23  # round(20 + 4*0.707) = round(22.83) = 23
+			and state.units[2].y == 23)
+	)
+
+	_test("retreat: min distance is 1 even with 0 panic tokens", func():
+		var state = _mock_orders_state()
+		state.units[2].x = 20; state.units[2].y = 15
+		state.units[2].panic_tokens = 0  # min(0*2, 1) = 1
+		state.units[1].x = 15; state.units[1].y = 15
+		var result = GameEngine._execute_retreat(state, state.units[2].id)
+		return (result["retreated"]
+			and result["distance"] == 1
+			and state.units[2].x == 21)
+	)
+
+	_test("retreat: board edge destroys unit", func():
+		var state = _mock_orders_state()
+		# Unit at (46,15), enemy at (44,15). Retreat direction: +X.
+		# 3 tokens → distance 6. Ideal dest: (52,15) → off board → destroyed.
+		state.units[2].x = 46; state.units[2].y = 15
+		state.units[2].panic_tokens = 3
+		state.units[1].x = 44; state.units[1].y = 15
+		var result = GameEngine._execute_retreat(state, state.units[2].id)
+		return (result["retreated"]
+			and result["destroyed"]
+			and state.units[2].is_dead
+			and state.units[2].model_count == 0)
+	)
+
+	_test("retreat: Stubborn Fanatics never retreat", func():
+		var state = _mock_orders_state()
+		var stats = Types.Stats.new(0, 3, 6, 3, 5, 60)
+		var rules: Array[String] = ["immobile", "stubborn_fanatics"]
+		var stump = Types.UnitState.new("stump", 1, "Stump Gun", "artillery", 1, 1, stats, "black_powder", rules)
+		stump.x = 20; stump.y = 15
+		stump.panic_tokens = 4
+		state.units.append(stump)
+		state.units[1].x = 15; state.units[1].y = 15
+		var result = GameEngine._execute_retreat(state, "stump")
+		return (result["stubborn_held"]
+			and not result["retreated"]
+			and stump.x == 20 and stump.y == 15)
+	)
+
+	_test("retreat: avoids occupied cells", func():
+		var state = _mock_orders_state()
+		# Unit at (20,15), enemy at (18,15). Retreat direction: +X.
+		# 1 token → distance 2. Ideal dest: (22,15).
+		# Place a blocker at (22,15).
+		state.units[2].x = 20; state.units[2].y = 15
+		state.units[2].panic_tokens = 1
+		state.units[1].x = 18; state.units[1].y = 15
+		state.units[3].x = 22; state.units[3].y = 15  # blocker at ideal dest
+		var result = GameEngine._execute_retreat(state, state.units[2].id)
+		return (result["retreated"]
+			and state.units[2].x != 22 or state.units[2].y != 15)  # didn't land on blocker
 	)
 
 
