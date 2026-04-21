@@ -18,11 +18,20 @@ const PORT = 9999
 @onready var ready_button = $MarginContainer/VBoxContainer/InRoomPanel/VBoxContainer/ReadyButton
 
 # Army UI nodes (created programmatically if not in scene)
-var roll_army_button: Button = null
+var preset_picker: OptionButton = null
 var submit_army_button: Button = null
 var army_display: VBoxContainer = null
 var waiting_label: Label = null
 var start_solo_button: Button = null
+var preset_mode_button: Button = null
+var custom_mode_button: Button = null
+var roster_builder: RosterBuilder = null
+
+# Presets loaded from v17.json (for the preset dropdown). Cached at _ready.
+var _presets: Array = []
+
+# Current roster-entry mode — "preset" (dropdown) or "custom" (builder).
+var _roster_mode: String = "preset"
 
 # State
 var is_connected: bool = false
@@ -57,6 +66,9 @@ func _ready() -> void:
 	NetworkClient.error_received.connect(_on_error_received)
 	NetworkClient.army_submitted.connect(_on_army_submitted)
 	NetworkClient.game_started.connect(_on_game_started)
+
+	# Cache presets for the dropdown
+	_presets = _get_presets_from_ruleset()
 
 	# Ensure army UI nodes exist (create programmatically if needed)
 	_ensure_army_ui_exists()
@@ -114,12 +126,18 @@ func _disconnect_from_server() -> void:
 func _reset_army_state() -> void:
 	my_roster = null
 	has_submitted_army = false
+	_roster_mode = "preset"
 	if submit_army_button:
 		submit_army_button.disabled = true
 		submit_army_button.visible = false
+	if preset_picker:
+		preset_picker.disabled = false
+		preset_picker.select(0)  # "— Select preset —" placeholder
 	if army_display:
 		for child in army_display.get_children():
 			child.queue_free()
+	if preset_mode_button and custom_mode_button:
+		_apply_roster_mode()
 
 
 func _on_connected_to_server() -> void:
@@ -209,23 +227,9 @@ func _show_room_panel() -> void:
 
 
 func _show_in_room_panel() -> void:
-	print("[Lobby] Switching to in-room panel")
 	connection_panel.visible = true  # Keep visible to show connection status
 	room_panel.visible = false
 	in_room_panel.visible = true
-	print("[Lobby] in_room_panel.visible = %s" % in_room_panel.visible)
-
-	# Debug: Check if roll_army_button exists and is visible
-	if roll_army_button:
-		print("[Lobby] roll_army_button exists, visible=%s, disabled=%s" % [roll_army_button.visible, roll_army_button.disabled])
-
-		# Check signal connections
-		var connections = roll_army_button.pressed.get_connections()
-		print("[Lobby] roll_army_button.pressed has %d connections" % connections.size())
-		for conn in connections:
-			print("[Lobby]   -> connected to: %s.%s" % [conn["callable"].get_object(), conn["callable"].get_method()])
-	else:
-		print("[Lobby] roll_army_button is NULL!")
 
 
 ## Update players list display
@@ -248,38 +252,102 @@ func _update_players_list() -> void:
 	_update_waiting_status()
 
 
-## Select Army button — picks the first preset roster for now.
-## DECISION: Phase 5b will replace this with a full roster builder UI.
-func _on_roll_army_button_pressed() -> void:
-	print("[Lobby] Select Army button clicked! is_in_room=%s, ruleset=%s" % [is_in_room, ruleset != null])
-
-	if not is_in_room:
-		return
-	if not ruleset:
+## Preset picker — index 0 is the placeholder, presets start at index 1.
+func _on_preset_picker_item_selected(index: int) -> void:
+	if not is_in_room or not ruleset:
 		return
 
-	# For now, use the first preset roster from the ruleset
-	# Phase 5b will add a proper roster builder UI
-	var presets_data = _get_presets_from_ruleset()
-	if presets_data.is_empty():
-		status_label.text = "No presets available"
+	# Index 0 is the "— Select preset —" placeholder; clear any displayed roster.
+	if index <= 0:
+		my_roster = null
+		if army_display:
+			for child in army_display.get_children():
+				child.queue_free()
+		if submit_army_button:
+			submit_army_button.disabled = true
+			submit_army_button.visible = false
 		return
 
-	# Pick a random preset for variety
-	var preset = presets_data[randi() % presets_data.size()]
+	var preset_index = index - 1
+	if preset_index >= _presets.size():
+		return
+
+	var preset = _presets[preset_index]
 	my_roster = Types.Roster.from_dict(preset["roster"])
 
-	print("[Lobby] Selected preset: %s (%d units)" % [preset["name"], my_roster.get_unit_count()])
+	_display_army(preset.get("name", ""), preset.get("description", ""))
 
-	# Display the roster
-	_display_army()
+	# Pre-fill the custom builder with this preset so switching to Custom
+	# mode starts from the same roster. Only meaningful when the builder
+	# exists (always true after _ensure_army_ui_exists).
+	if roster_builder:
+		roster_builder.load_roster(my_roster)
 
-	# Enable submit button
 	if submit_army_button:
 		submit_army_button.disabled = false
 		submit_army_button.visible = true
 
-	status_label.text = "Roster selected: %s (%d units)" % [preset["name"], my_roster.get_unit_count()]
+	status_label.text = "Preset selected: %s (%d units)" % [preset["name"], my_roster.get_unit_count()]
+
+
+func _on_preset_mode_pressed() -> void:
+	_roster_mode = "preset"
+	_apply_roster_mode()
+
+
+func _on_custom_mode_pressed() -> void:
+	_roster_mode = "custom"
+	_apply_roster_mode()
+
+
+## Swap visibility + clear roster state when the entry mode changes. Each
+## mode is self-contained for now; step 3 of #28 will let preset selection
+## pre-fill the custom builder.
+func _apply_roster_mode() -> void:
+	if preset_mode_button:
+		preset_mode_button.button_pressed = (_roster_mode == "preset")
+	if custom_mode_button:
+		custom_mode_button.button_pressed = (_roster_mode == "custom")
+	if preset_picker:
+		preset_picker.visible = (_roster_mode == "preset")
+	if roster_builder:
+		roster_builder.visible = (_roster_mode == "custom")
+
+	# Switching modes discards the in-progress roster from the other mode.
+	my_roster = null
+	if preset_picker:
+		preset_picker.select(0)
+	if army_display:
+		for child in army_display.get_children():
+			child.queue_free()
+	if submit_army_button:
+		submit_army_button.disabled = true
+		submit_army_button.visible = false
+
+	# If we land in custom mode, immediately publish the builder's current
+	# validity so Submit reflects reality (an empty builder is invalid).
+	if _roster_mode == "custom" and roster_builder:
+		roster_builder._refresh_validation()
+
+
+## Emitted by RosterBuilder whenever a dropdown changes.
+func _on_custom_roster_changed(is_valid: bool, _error: String) -> void:
+	if _roster_mode != "custom" or not roster_builder:
+		return
+	if is_valid:
+		my_roster = roster_builder.get_roster()
+		_display_army("Custom Roster", "")
+		if submit_army_button:
+			submit_army_button.disabled = false
+			submit_army_button.visible = true
+	else:
+		my_roster = null
+		if army_display:
+			for child in army_display.get_children():
+				child.queue_free()
+		if submit_army_button:
+			submit_army_button.disabled = true
+			submit_army_button.visible = false
 
 
 ## Get presets from the loaded ruleset JSON (re-parse to access presets field).
@@ -296,18 +364,29 @@ func _get_presets_from_ruleset() -> Array:
 	return data["presets"]
 
 
-## Display the selected roster
-func _display_army() -> void:
+## Display the selected roster. preset_name/description are optional context
+## strings shown above the unit list.
+func _display_army(preset_name: String = "", preset_description: String = "") -> void:
 	if not army_display or not my_roster:
 		return
 
 	for child in army_display.get_children():
 		child.queue_free()
 
+	var header_text = "Your Regiment: %d units" % my_roster.get_unit_count()
+	if not preset_name.is_empty():
+		header_text = "%s — %d units" % [preset_name, my_roster.get_unit_count()]
 	var header = Label.new()
-	header.text = "Your Regiment: %d units" % my_roster.get_unit_count()
+	header.text = header_text
 	header.add_theme_font_size_override("font_size", 16)
 	army_display.add_child(header)
+
+	if not preset_description.is_empty():
+		var desc = Label.new()
+		desc.text = preset_description
+		desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		desc.add_theme_color_override("font_color", Color(0.75, 0.75, 0.75))
+		army_display.add_child(desc)
 
 	var unit_num = 0
 	for snob in my_roster.snobs:
@@ -350,58 +429,94 @@ func _create_roster_entry_panel(number: int, unit_type: String, equipment: Strin
 
 ## Ensure army UI nodes exist (create programmatically if missing from .tscn)
 func _ensure_army_ui_exists() -> void:
-	print("[Lobby] _ensure_army_ui_exists() called")
-
 	# Find the InRoomPanel VBoxContainer
 	var in_room_vbox = in_room_panel.get_node_or_null("VBoxContainer")
+	if not in_room_vbox:
+		# Might already be wrapped (see below) — search one level deeper.
+		var scroll = in_room_panel.get_node_or_null("LobbyScroll")
+		if scroll:
+			in_room_vbox = scroll.get_node_or_null("VBoxContainer")
 	if not in_room_vbox:
 		push_error("[Lobby] InRoomPanel/VBoxContainer not found")
 		return
 
-	# Try to get nodes from scene first
-	roll_army_button = in_room_vbox.get_node_or_null("RollArmyButton")
-	submit_army_button = in_room_vbox.get_node_or_null("SubmitArmyButton")
+	# Wrap the in-room content in a ScrollContainer so the Submit button and
+	# other controls stay reachable when the roster builder + army display
+	# make the content taller than the window. @onready paths have already
+	# resolved, so moving the VBoxContainer under a new ScrollContainer
+	# doesn't invalidate any cached node references.
+	if in_room_vbox.get_parent() == in_room_panel:
+		in_room_panel.remove_child(in_room_vbox)
+		var scroll := ScrollContainer.new()
+		scroll.name = "LobbyScroll"
+		scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+		in_room_panel.add_child(scroll)
+		in_room_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		scroll.add_child(in_room_vbox)
 
-	print("[Lobby] Found existing nodes: roll=%s, submit=%s" % [roll_army_button != null, submit_army_button != null])
+	# Remove any legacy "Roll Army" button from an earlier build
+	var legacy_roll = in_room_vbox.get_node_or_null("RollArmyButton")
+	if legacy_roll:
+		legacy_roll.queue_free()
+
+	submit_army_button = in_room_vbox.get_node_or_null("SubmitArmyButton")
 
 	var scroll_container = in_room_vbox.get_node_or_null("ArmyScrollContainer")
 	if scroll_container:
 		army_display = scroll_container.get_node_or_null("ArmyDisplay")
 
-	# If they exist, connect signals and we're done
-	if roll_army_button != null and submit_army_button != null and army_display != null:
-		print("[Lobby] Army UI nodes already exist in scene, connecting signals")
+	# Mode toggle — [Preset] [Custom]
+	var mode_row: HBoxContainer = in_room_vbox.get_node_or_null("RosterModeRow")
+	if not mode_row:
+		mode_row = HBoxContainer.new()
+		mode_row.name = "RosterModeRow"
+		in_room_vbox.add_child(mode_row)
+	preset_mode_button = mode_row.get_node_or_null("PresetModeButton")
+	if not preset_mode_button:
+		preset_mode_button = Button.new()
+		preset_mode_button.name = "PresetModeButton"
+		preset_mode_button.text = "Preset"
+		preset_mode_button.toggle_mode = true
+		preset_mode_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		mode_row.add_child(preset_mode_button)
+	custom_mode_button = mode_row.get_node_or_null("CustomModeButton")
+	if not custom_mode_button:
+		custom_mode_button = Button.new()
+		custom_mode_button.name = "CustomModeButton"
+		custom_mode_button.text = "Custom"
+		custom_mode_button.toggle_mode = true
+		custom_mode_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		mode_row.add_child(custom_mode_button)
+	if not preset_mode_button.pressed.is_connected(_on_preset_mode_pressed):
+		preset_mode_button.pressed.connect(_on_preset_mode_pressed)
+	if not custom_mode_button.pressed.is_connected(_on_custom_mode_pressed):
+		custom_mode_button.pressed.connect(_on_custom_mode_pressed)
 
-		# Connect signals if not already connected
-		if not roll_army_button.pressed.is_connected(_on_roll_army_button_pressed):
-			print("[Lobby] Connecting roll_army_button.pressed signal")
-			roll_army_button.pressed.connect(_on_roll_army_button_pressed)
-		else:
-			print("[Lobby] roll_army_button.pressed already connected")
+	# Create preset picker if needed
+	preset_picker = in_room_vbox.get_node_or_null("PresetPicker")
+	if not preset_picker:
+		preset_picker = OptionButton.new()
+		preset_picker.name = "PresetPicker"
+		preset_picker.custom_minimum_size = Vector2(0, 40)
+		in_room_vbox.add_child(preset_picker)
 
-		if not submit_army_button.pressed.is_connected(_on_submit_army_button_pressed):
-			print("[Lobby] Connecting submit_army_button.pressed signal")
-			submit_army_button.pressed.connect(_on_submit_army_button_pressed)
-		else:
-			print("[Lobby] submit_army_button.pressed already connected")
+	_populate_preset_picker()
 
-		return
+	if not preset_picker.item_selected.is_connected(_on_preset_picker_item_selected):
+		preset_picker.item_selected.connect(_on_preset_picker_item_selected)
 
-	print("[Lobby] Creating army UI nodes programmatically...")
+	# Create roster builder (initially hidden — Preset mode is default)
+	roster_builder = in_room_vbox.get_node_or_null("RosterBuilder") as RosterBuilder
+	if not roster_builder:
+		roster_builder = RosterBuilder.new()
+		roster_builder.name = "RosterBuilder"
+		in_room_vbox.add_child(roster_builder)
+		roster_builder.setup(ruleset)
+		roster_builder.roster_changed.connect(_on_custom_roster_changed)
 
-	# Create RollArmyButton if needed
-	if not roll_army_button:
-		print("[Lobby] Creating new RollArmyButton")
-		roll_army_button = Button.new()
-		roll_army_button.name = "RollArmyButton"
-		roll_army_button.text = "Roll Army"
-		roll_army_button.custom_minimum_size = Vector2(0, 40)
-		in_room_vbox.add_child(roll_army_button)
-
-	# Connect signal (whether new or existing)
-	if roll_army_button and not roll_army_button.pressed.is_connected(_on_roll_army_button_pressed):
-		print("[Lobby] Connecting roll_army_button.pressed signal")
-		roll_army_button.pressed.connect(_on_roll_army_button_pressed)
+	_apply_roster_mode()
 
 	# Create ArmyScrollContainer
 	if not scroll_container:
@@ -423,7 +538,6 @@ func _ensure_army_ui_exists() -> void:
 
 	# Create SubmitArmyButton if needed
 	if not submit_army_button:
-		print("[Lobby] Creating new SubmitArmyButton")
 		submit_army_button = Button.new()
 		submit_army_button.name = "SubmitArmyButton"
 		submit_army_button.text = "Submit Army"
@@ -433,7 +547,6 @@ func _ensure_army_ui_exists() -> void:
 
 	# Connect signal (whether new or existing)
 	if submit_army_button and not submit_army_button.pressed.is_connected(_on_submit_army_button_pressed):
-		print("[Lobby] Connecting submit_army_button.pressed signal")
 		submit_army_button.pressed.connect(_on_submit_army_button_pressed)
 
 	# Create waiting status label
@@ -456,7 +569,16 @@ func _ensure_army_ui_exists() -> void:
 		start_solo_button.pressed.connect(_on_start_solo_button_pressed)
 		in_room_vbox.add_child(start_solo_button)
 
-	print("[Lobby] Army UI nodes created successfully")
+
+## Populate the preset dropdown from cached _presets. Index 0 is a placeholder.
+func _populate_preset_picker() -> void:
+	if not preset_picker:
+		return
+	preset_picker.clear()
+	preset_picker.add_item("— Select preset —")
+	for preset in _presets:
+		preset_picker.add_item(preset.get("name", "<unnamed>"))
+	preset_picker.select(0)
 
 
 ## Submit Army button
@@ -470,9 +592,15 @@ func _on_submit_army_button_pressed() -> void:
 	NetworkClient.submit_army.rpc_id(1, my_roster.to_dict())
 	has_submitted_army = true
 
-	# Disable buttons
-	if roll_army_button:
-		roll_army_button.disabled = true
+	# Disable further selection/submission until reset
+	if preset_picker:
+		preset_picker.disabled = true
+	if preset_mode_button:
+		preset_mode_button.disabled = true
+	if custom_mode_button:
+		custom_mode_button.disabled = true
+	if roster_builder:
+		roster_builder.visible = false
 	if submit_army_button:
 		submit_army_button.disabled = true
 

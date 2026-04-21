@@ -1,8 +1,8 @@
 # Turnip28 Simulator - Project Memory
 
 **Last Updated:** 2026-04-20
-**Current state:** victory-conditions work complete, PR [#35](https://github.com/rpmcdougall/turnipsim/pull/35) **open on `feature/victory-conditions`** awaiting merge. Closes #22, #33, #34.
-**Active branch:** `feature/victory-conditions` (pushed; don't start new work until merged)
+**Current state:** Phase 5b roster builder complete. PR [#37](https://github.com/rpmcdougall/turnipsim/pull/37) **open on `feature/roster-builder`** awaiting merge. Closes #28. PR #35 already merged this day.
+**Active branch:** `feature/roster-builder` (pushed; don't start new work until merged)
 
 ## Phase status
 
@@ -16,8 +16,8 @@
 | 4 — Battle engine (initial) | ✅ | PR #26 — later replaced by v17 order state machine (PR #32) |
 | 4.5 — v17 data model | ✅ | PR #30 (issue #27) |
 | 4.5 — v17 order mechanics | ✅ | **PR #32 (issue #31)** — this session |
-| 5 — Polish | 🚧 | #22 ✅ on PR #35 (max-rounds tiebreak, end-game overlay), #21 Todo (visual polish — blocks comfortable play-testing per 2026-04-20 notes), #36 Todo (objectives, replaces placeholder tiebreak) |
-| 5b — Army submission UI | 🚧 | #28 Todo — lobby currently picks random preset; real builder not yet implemented (old #20 was a placeholder) |
+| 5 — Polish | 🚧 | #22 ✅ (PR #35 merged), #21 Todo (visual polish — grid targeting visibility flagged on 2026-04-20), #36 Todo (objectives, replaces placeholder tiebreak) |
+| 5b — Army submission UI | 🚧 | **#28 on PR #37** — preset dropdown + custom slot builder with live validation, preset pre-fill, per-slot stats; in-room panel scroll-wrapped |
 | 6 — Deploy | ⬜ | #23–25 Todo |
 | 7 — Cult mechanics | ⬜ | #29 Todo |
 
@@ -36,7 +36,10 @@ godot/
 │   └── game_engine.gd             # v17 state machine (pure functions)
 ├── client/
 │   ├── main.tscn                  # Main menu
-│   └── scenes/{lobby,battle}.gd   # Programmatic UI
+│   └── scenes/
+│       ├── lobby.gd               # Programmatic UI — preset picker + mode toggle
+│       ├── roster_builder.gd      # Custom roster slots (PR #37) — RosterBuilder class
+│       └── battle.gd              # Programmatic battle UI
 ├── autoloads/
 │   ├── network_manager.gd         # Mode detection (--server, both arg arrays)
 │   └── network_client.gd          # Signals + RPC interface
@@ -107,6 +110,8 @@ Per-process logs land in `test-logs/` (gitignored). Ctrl+C tears everything down
 - `docs/wiki/Phase-4-UI-{Programmatic,Tasks}.md` are historical checkpoint-style docs; candidates for archival
 - **Zombie server on port 9999** — `test-stack.sh` doesn't detect a stale previously-launched server; new stack's server silently fails to bind while clients attach to the old one (ghost-code behavior). Workaround: `taskkill //F //IM Godot_v4.6.2-stable_win64.exe` before relaunch. Candidate for a small script hardening pass.
 - **Max-rounds tiebreak is a placeholder** — v17 actually scores by objectives captured (#36). Current alive-units → model-count tiebreak is stand-in logic, marked `TODO(objectives)` in `game_engine.gd:check_victory`.
+- **GDScript warnings-as-errors + inferred Variant on ternaries** — any conditional expression with a `Dictionary.get(...)` branch can infer `Variant` and fail the whole file to compile. Cost ~15 min on PR #37 when `RosterBuilder.new()` silently failed and Custom mode appeared empty. Split into explicit `if`/assign with typed lvalue. First check the client log for compile errors when a programmatic UI "just doesn't appear."
+- **Autoload identifiers in `godot -s <script>` mode** — parse-time globals that runtime node creation can't register. `test_phase3_scenes.gd` prints `Identifier not found: NetworkClient` errors but the test still PASSES because `load()` returns the scene resource. Cosmetic. Real fix (if ever needed) is to rewrite call sites to `get_node("/root/NetworkClient")`.
 
 ## Checkpoint history
 
@@ -114,14 +119,15 @@ Per-process logs land in `test-logs/` (gitignored). Ctrl+C tears everything down
 - `memory/checkpoint-2026-04-17-phase-3b-4.md`
 - `memory/checkpoint-2026-04-18-phase-4-ui.md`
 - `memory/checkpoint-2026-04-19-order-mechanics.md`
-- `memory/checkpoint-2026-04-20-victory-conditions.md` ← this session
+- `memory/checkpoint-2026-04-20-victory-conditions.md`
+- `memory/checkpoint-2026-04-20-roster-builder.md` ← this session
 
 ## Next pickup
 
-Merge PR #35 first. Then, per agreement this session: **#28 roster builder** is next (current lobby picks a random preset — low player value). After that:
+Merge PR #37 first. Then, with #28 shipped:
 
-- **#21** — Phase 5 visual polish (grid targeting visibility flagged as friction during manual play on 2026-04-20, commented on issue)
-- **#36** — v17 objectives (replaces the placeholder max-rounds tiebreak with real scoring)
-- **Phase 6** — export presets + deploy (#23–25)
+- **#21** — Phase 5 visual polish (grid targeting visibility flagged as friction on 2026-04-20, commented on issue). Most-obvious UX improvement for comfortable play-testing.
+- **#36** — v17 objectives (replaces the placeholder max-rounds tiebreak with real scoring). Self-contained mini-phase, rules-accuracy work.
+- **Phase 6** — export presets + deploy (#23–25).
 
-No strict dependencies between #28, #21, and #36 — pick whichever fits the session.
+No dependencies between #21, #36, and Phase 6 — pick whichever fits the session.
