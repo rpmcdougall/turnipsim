@@ -718,6 +718,45 @@ static func _execute_charge(state: Types.GameState, unit: Types.UnitState, param
 	var new_unit = _find_unit_in(new_state, unit.id)
 	var new_target = _find_unit_in(new_state, target_id)
 
+	# v17 core p.16: target takes panic test when charged.
+	var panic_die: int = params.get("panic_die", 1)
+	var fearless_die: int = params.get("fearless_die", 1)
+	var panic = _panic_test(new_target, panic_die, fearless_die)
+
+	if not panic["passed"]:
+		# Target failed panic test — gains +1 panic token (v17 p.19).
+		# Full retreat movement deferred to #53; for now charger moves
+		# adjacent and melee is skipped (represents target fleeing).
+		new_target.panic_tokens = mini(new_target.panic_tokens + 1, 6)
+		new_unit.x = charge_dest.x
+		new_unit.y = charge_dest.y
+
+		_advance_after_order(new_state)
+
+		new_state.action_log.append({
+			"round": state.current_round,
+			"seat": state.active_seat,
+			"action": "charge",
+			"unit_id": unit.id,
+			"unit_type": unit.unit_type,
+			"target_id": target_id,
+			"target_type": target.unit_type,
+			"charge_range": charge_range,
+			"blundered": state.current_order_blundered,
+			"panic_test": panic,
+			"target_fled": true,
+			"hits": 0, "saves": 0, "unsaved_wounds": 0
+		})
+
+		result.success = true
+		result.new_state = new_state
+		result.dice_rolled = [panic_die, fearless_die]
+		var fearless_text = " (Fearless failed)" if panic["used_fearless"] else ""
+		result.description = "Charge! %s → %s — target panicked and fled!%s" % [
+			unit.unit_type, target.unit_type, fearless_text
+		]
+		return result
+
 	# Move to adjacent cell
 	new_unit.x = charge_dest.x
 	new_unit.y = charge_dest.y
@@ -730,6 +769,10 @@ static func _execute_charge(state: Types.GameState, unit: Types.UnitState, param
 
 	_advance_after_order(new_state)
 
+	var panic_log = {}
+	if not panic["auto_passed"]:
+		panic_log = panic
+
 	new_state.action_log.append({
 		"round": state.current_round,
 		"seat": state.active_seat,
@@ -740,6 +783,8 @@ static func _execute_charge(state: Types.GameState, unit: Types.UnitState, param
 		"target_type": target.unit_type,
 		"charge_range": charge_range,
 		"blundered": state.current_order_blundered,
+		"panic_test": panic_log,
+		"target_fled": false,
 		"hits": combat["hits"],
 		"saves": combat["saves"],
 		"unsaved_wounds": combat["unsaved_wounds"]
@@ -747,9 +792,14 @@ static func _execute_charge(state: Types.GameState, unit: Types.UnitState, param
 
 	result.success = true
 	result.new_state = new_state
-	result.dice_rolled = dice_results
-	result.description = "Charge! %s → %s (%d hits, %d saved, %d wounds)%s" % [
-		unit.unit_type, target.unit_type,
+	result.dice_rolled = [panic_die, fearless_die] + dice_results
+	var panic_text = ""
+	if panic["fearless_override"]:
+		panic_text = " (target Fearless — held!)"
+	elif not panic["auto_passed"]:
+		panic_text = " (target passed panic test)"
+	result.description = "Charge! %s → %s%s (%d hits, %d saved, %d wounds)%s" % [
+		unit.unit_type, target.unit_type, panic_text,
 		combat["hits"], combat["saves"], combat["unsaved_wounds"],
 		" [DESTROYED]" if new_target.is_dead else ""
 	]
@@ -836,6 +886,65 @@ static func _end_round(state: Types.GameState) -> void:
 		"round": state.current_round - 1,
 		"action": "round_ended"
 	})
+
+
+# =============================================================================
+# PANIC TEST
+# =============================================================================
+
+## Check whether a unit is currently Fearless (3+ to ignore forced retreat).
+## Sources: "fearless" special rule (Brutes), or "safety_in_numbers" with 8+
+## models alive (Fodder).
+static func _is_fearless(unit: Types.UnitState) -> bool:
+	if "fearless" in unit.special_rules:
+		return true
+	if "safety_in_numbers" in unit.special_rules and unit.model_count >= 8:
+		return true
+	return false
+
+
+## Panic test per v17 core p.19.
+## Roll D6 + panic_tokens: ≤6 pass, ≥7 fail (must retreat).
+## Natural 1 always passes. 0 tokens auto-pass (skip test).
+## Fearless units that fail get a second chance: fearless_die 3+ = override to pass.
+##
+## Returns { passed, roll, total, auto_passed, fearless_override, used_fearless }.
+## Does NOT modify unit state — caller applies consequences.
+static func _panic_test(unit: Types.UnitState, panic_die: int, fearless_die: int) -> Dictionary:
+	var result = {
+		"passed": true,
+		"roll": panic_die,
+		"total": 0,
+		"auto_passed": false,
+		"fearless_override": false,
+		"used_fearless": false,
+	}
+
+	# 0 tokens = auto-pass (v17: "units with zero panic tokens can skip the test")
+	if unit.panic_tokens == 0:
+		result["auto_passed"] = true
+		return result
+
+	# Natural 1 always passes
+	if panic_die == 1:
+		return result
+
+	var total: int = panic_die + unit.panic_tokens
+	result["total"] = total
+
+	if total <= 6:
+		# Passed normally
+		return result
+
+	# Failed — check Fearless override
+	if _is_fearless(unit):
+		result["used_fearless"] = true
+		if fearless_die >= 3:
+			result["fearless_override"] = true
+			return result
+
+	result["passed"] = false
+	return result
 
 
 # =============================================================================
