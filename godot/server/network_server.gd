@@ -389,8 +389,19 @@ func _initialize_game_state(room) -> Dictionary:
 	var ruleset = Ruleset.new()
 	ruleset.load_from_file("res://game/rulesets/v17.json")
 
-	# Roll initiative — seat 1 or 2
-	var initiative_seat = 1 if _roll_d6() <= 3 else 2
+	# Roll initiative — v17 core p.9: players roll off with a D6 each; ties
+	# re-roll. Higher roll takes initiative.
+	var initiative_seat: int = 1
+	while true:
+		var roll_1 := _roll_d6()
+		var roll_2 := _roll_d6()
+		if roll_1 > roll_2:
+			initiative_seat = 1
+			break
+		elif roll_2 > roll_1:
+			initiative_seat = 2
+			break
+		# Tie — re-roll.
 
 	# Expand each player's roster into UnitStates
 	for player in room.players:

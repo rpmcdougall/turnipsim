@@ -138,9 +138,9 @@
         "vulnerability": 6,
         "weapon_range": 18
       },
-      "special_rules": ["sharpshooters", "skirmish"],
+      "special_rules": ["sharpshooters", "skirmish", "vanguard"],
       "allowed_equipment": ["black_powder", "missile", "close_combat"],
-      "description": "Light skirmishers. Can target any enemy. Hard to hit with shooting (+2 I for shooters)."
+      "description": "Light skirmishers. Can target any enemy. Hard to hit with shooting (+2 I for shooters). Deploy forward with Vanguard."
     },
     "Brutes": {
       "unit_type": "Brutes",
@@ -154,9 +154,9 @@
         "vulnerability": 5,
         "weapon_range": 18
       },
-      "special_rules": ["fearless", "vanguard"],
+      "special_rules": ["fearless"],
       "allowed_equipment": ["black_powder", "missile", "close_combat"],
-      "description": "Dedicated fanatics. Fearless (3+ to ignore retreat). Deploy forward with Vanguard."
+      "description": "Dedicated fanatics. Fearless (3+ to ignore retreat)."
     },
     "Whelps": {
       "unit_type": "Whelps",
@@ -200,11 +200,11 @@
         "inaccuracy": 6,
         "wounds": 3,
         "vulnerability": 5,
-        "weapon_range": 48
+        "weapon_range": 60
       },
       "special_rules": ["immobile", "unstable_icon", "stubborn_fanatics", "preliminary_bombardment"],
       "allowed_equipment": ["black_powder"],
-      "description": "Ancient cannon. Immobile. Round Shot (48\", 3 wounds no save) or Grape Shot (12\", 5 dice)."
+      "description": "Ancient cannon. Immobile. Round Shot (60\", 2 wounds per hit, no save) or Grape Shot (12\", 3D6 attacks). Ammo split pending — see issue #38."
     }
   },
 
