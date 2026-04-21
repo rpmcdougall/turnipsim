@@ -265,7 +265,7 @@ static func declare_order(state: Types.GameState, unit_id: String, order_type: S
 	if order_type == "move_and_shoot" and unit.has_powder_smoke:
 		result.error = "Cannot Move and Shoot with powder smoke"
 		return result
-	if order_type in ["march", "charge"] and "immobile" in unit.special_rules:
+	if order_type in ["march", "charge", "move_and_shoot"] and "immobile" in unit.special_rules:
 		result.error = "Immobile unit cannot %s" % order_type
 		return result
 
@@ -359,7 +359,7 @@ static func declare_self_order(state: Types.GameState, unit_id: String, order_ty
 	if order_type == "move_and_shoot" and (unit.base_stats.weapon_range <= 0 or unit.has_powder_smoke):
 		result.error = "Cannot Move and Shoot"
 		return result
-	if order_type in ["march", "charge"] and "immobile" in unit.special_rules:
+	if order_type in ["march", "charge", "move_and_shoot"] and "immobile" in unit.special_rules:
 		result.error = "Immobile unit cannot %s" % order_type
 		return result
 
