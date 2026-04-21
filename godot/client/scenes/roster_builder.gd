@@ -64,6 +64,65 @@ func _append_follower(snob: Types.RosterSnob, slot: Dictionary) -> void:
 	snob.followers.append(Types.RosterUnit.new(unit_type, equipment))
 
 
+## Populate the builder's dropdowns to match the supplied roster.
+## Used to pre-fill the Custom view when a player selects a preset,
+## so they can tweak rather than start from scratch. Silently ignores
+## followers beyond the fixed slot count.
+func load_roster(roster: Types.Roster) -> void:
+	if roster == null:
+		return
+
+	# Flatten roster followers into the same order the slots expect:
+	# Toff f0, Toff f1, Toady0 f0, Toady1 f0. Tolerate missing followers
+	# by leaving the corresponding slot unselected.
+	var flat: Array = [null, null, null, null]
+	var toff_idx := 0
+	var toady_idx := 0
+	for snob in roster.snobs:
+		if snob.snob_type == "Toff":
+			for i in range(min(2, snob.followers.size())):
+				flat[i] = snob.followers[i]
+			toff_idx += 1
+		elif snob.snob_type == "Toady":
+			var target_index := 2 + toady_idx
+			if target_index < flat.size() and snob.followers.size() > 0:
+				flat[target_index] = snob.followers[0]
+			toady_idx += 1
+
+	for i in range(_follower_slots.size()):
+		_apply_slot_from_follower(_follower_slots[i], flat[i] if i < flat.size() else null)
+
+	_refresh_validation()
+
+
+## Set a slot's dropdowns to match a RosterUnit (or clear them if null).
+func _apply_slot_from_follower(slot: Dictionary, follower) -> void:
+	var type_picker: OptionButton = slot["type_picker"]
+	var equip_picker: OptionButton = slot["equip_picker"]
+
+	if follower == null:
+		type_picker.select(0)
+		_refresh_equipment_picker(slot)
+		_refresh_info_label(slot)
+		return
+
+	_select_by_metadata(type_picker, follower.unit_type)
+	_refresh_equipment_picker(slot)
+	_select_by_metadata(equip_picker, follower.equipment)
+	_refresh_info_label(slot)
+
+
+## Select the OptionButton item whose metadata matches `value`.
+## Falls back to index 0 (placeholder) if no match — e.g. if the preset
+## contains a unit type not offered in the dropdown.
+func _select_by_metadata(picker: OptionButton, value: String) -> void:
+	for i in range(picker.item_count):
+		if picker.get_item_metadata(i) == value:
+			picker.select(i)
+			return
+	picker.select(0)
+
+
 func _picker_value(picker: OptionButton) -> String:
 	if picker.selected <= 0:
 		return ""
@@ -104,9 +163,13 @@ func _build_snob_block(parent: VBoxContainer, label_text: String, follower_count
 		parent.add_child(_build_follower_row())
 
 
-func _build_follower_row() -> HBoxContainer:
-	var row := HBoxContainer.new()
-	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+func _build_follower_row() -> VBoxContainer:
+	var wrapper := VBoxContainer.new()
+	wrapper.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+
+	var pickers := HBoxContainer.new()
+	pickers.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	wrapper.add_child(pickers)
 
 	var type_picker := OptionButton.new()
 	type_picker.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -117,22 +180,30 @@ func _build_follower_row() -> HBoxContainer:
 		var display: String = "%s (%d models)" % [def.get("unit_type", key), def.get("model_count", 0)]
 		type_picker.add_item(display)
 		type_picker.set_item_metadata(type_picker.item_count - 1, key)
-	row.add_child(type_picker)
+	pickers.add_child(type_picker)
 
 	var equip_picker := OptionButton.new()
 	equip_picker.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	equip_picker.disabled = true
 	equip_picker.add_item(UNSELECTED_LABEL)
 	equip_picker.set_item_metadata(0, "")
-	row.add_child(equip_picker)
+	pickers.add_child(equip_picker)
 
-	var slot := {"type_picker": type_picker, "equip_picker": equip_picker}
+	# Stats / special-rules hint line, hidden until a unit type is picked.
+	var info_label := Label.new()
+	info_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	info_label.add_theme_font_size_override("font_size", 11)
+	info_label.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
+	info_label.visible = false
+	wrapper.add_child(info_label)
+
+	var slot := {"type_picker": type_picker, "equip_picker": equip_picker, "info_label": info_label}
 	_follower_slots.append(slot)
 
 	type_picker.item_selected.connect(_on_type_picker_selected.bind(slot))
 	equip_picker.item_selected.connect(_on_equip_picker_selected)
 
-	return row
+	return wrapper
 
 
 # =============================================================================
@@ -141,7 +212,41 @@ func _build_follower_row() -> HBoxContainer:
 
 func _on_type_picker_selected(_index: int, slot: Dictionary) -> void:
 	_refresh_equipment_picker(slot)
+	_refresh_info_label(slot)
 	_refresh_validation()
+
+
+## Populate the per-slot info label with a compact stat line + any
+## special-rule names. Hidden when no unit type is selected.
+func _refresh_info_label(slot: Dictionary) -> void:
+	var info_label: Label = slot["info_label"]
+	var unit_type: String = _picker_value(slot["type_picker"])
+	if unit_type.is_empty():
+		info_label.visible = false
+		info_label.text = ""
+		return
+
+	var def := ruleset.get_unit_type(unit_type)
+	if def.is_empty():
+		info_label.visible = false
+		return
+
+	var stats: Dictionary = def.get("base_stats", {})
+	var parts: Array[String] = []
+	parts.append("M%d A%d I%d+ W%d V%d+" % [
+		stats.get("movement", 0), stats.get("attacks", 0),
+		stats.get("inaccuracy", 0), stats.get("wounds", 0),
+		stats.get("vulnerability", 0),
+	])
+	var rules: Array = def.get("special_rules", [])
+	if not rules.is_empty():
+		var rule_names: Array[String] = []
+		for key in rules:
+			rule_names.append(str(key).replace("_", " "))
+		parts.append("[%s]" % ", ".join(rule_names))
+
+	info_label.text = "  " + "  ·  ".join(parts)
+	info_label.visible = true
 
 
 func _on_equip_picker_selected(_index: int) -> void:

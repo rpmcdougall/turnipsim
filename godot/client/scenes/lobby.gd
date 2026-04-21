@@ -277,6 +277,12 @@ func _on_preset_picker_item_selected(index: int) -> void:
 
 	_display_army(preset.get("name", ""), preset.get("description", ""))
 
+	# Pre-fill the custom builder with this preset so switching to Custom
+	# mode starts from the same roster. Only meaningful when the builder
+	# exists (always true after _ensure_army_ui_exists).
+	if roster_builder:
+		roster_builder.load_roster(my_roster)
+
 	if submit_army_button:
 		submit_army_button.disabled = false
 		submit_army_button.visible = true
