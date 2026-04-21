@@ -873,15 +873,18 @@ func _is_valid_declare_target(unit: Types.UnitState) -> bool:
 func _can_receive_order(unit: Types.UnitState, order_type: String) -> bool:
 	if not unit or unit.is_dead or unit.has_ordered:
 		return false
+	var immobile: bool = "immobile" in unit.special_rules
 	match order_type:
 		"volley_fire":
 			return unit.base_stats.weapon_range > 0 and not unit.has_powder_smoke
 		"move_and_shoot":
-			return unit.base_stats.weapon_range > 0 and not unit.has_powder_smoke
+			return (unit.base_stats.weapon_range > 0
+				and not unit.has_powder_smoke
+				and not immobile)
 		"march":
-			return not ("immobile" in unit.special_rules)
+			return not immobile
 		"charge":
-			return not ("immobile" in unit.special_rules)
+			return not immobile
 	return false
 
 
@@ -904,14 +907,31 @@ func _reconcile_selection_state() -> void:
 
 func _update_declare_button_states() -> void:
 	var unit = _get_unit_by_id(selected_target_id)
+	# Hide order types the unit can't receive (e.g. move orders for immobile
+	# artillery) rather than just disabling them — cuts clutter on units with
+	# narrow option sets. No selection → show all, all disabled.
 	for order_type in ORDER_TYPES:
-		declare_order_buttons[order_type].disabled = not _can_receive_order(unit, order_type)
+		var btn: Button = declare_order_buttons[order_type]
+		if unit == null:
+			btn.visible = true
+			btn.disabled = true
+		else:
+			var eligible := _can_receive_order(unit, order_type)
+			btn.visible = eligible
+			btn.disabled = not eligible
 
 
 func _update_self_button_states() -> void:
 	var unit = _get_unit_by_id(selected_target_id)
 	for order_type in ORDER_TYPES:
-		self_order_buttons[order_type].disabled = not _can_receive_order(unit, order_type)
+		var btn: Button = self_order_buttons[order_type]
+		if unit == null:
+			btn.visible = true
+			btn.disabled = true
+		else:
+			var eligible := _can_receive_order(unit, order_type)
+			btn.visible = eligible
+			btn.disabled = not eligible
 
 
 func _get_unit_at(x: int, y: int) -> Types.UnitState:

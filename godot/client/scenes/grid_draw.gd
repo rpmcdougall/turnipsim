@@ -47,18 +47,23 @@ func _draw() -> void:
 	# Command-range overlay: Manhattan diamond around the Made-Ready Snob.
 	# Matches the engine's |dx| + |dy| <= range check used by declare_order.
 	var state = battle_ref.current_game_state
-	if state and state.current_snob_id != "":
+	if state and state.order_phase == "order_declare" and state.current_snob_id != "":
 		var snob = battle_ref._get_unit_by_id(state.current_snob_id)
 		if snob and snob.x >= 0 and snob.y >= 0:
-			_draw_command_diamond(snob.x, snob.y, snob.get_command_range(), cs, bw, bh)
+			_draw_range_diamond(snob.x, snob.y, snob.get_command_range(), cs, bw, bh,
+				Color(1.0, 0.95, 0.4, 0.12), Color(1.0, 0.9, 0.3, 0.8))
+
+	# Order-execute overlay: reach diamond + valid target outlines for the
+	# acting unit. Client-side hint only — server remains authoritative.
+	if state and state.order_phase == "order_execute":
+		_draw_order_execute_overlay(state, cs, bw, bh)
 
 
 ## Fill every cell whose Manhattan distance from (cx, cy) is ≤ range with a
 ## translucent highlight, and outline the diamond boundary.
-func _draw_command_diamond(cx: int, cy: int, range_cells: int, cs: float, bw: int, bh: int) -> void:
+func _draw_range_diamond(cx: int, cy: int, range_cells: int, cs: float, bw: int, bh: int, fill: Color, outline: Color) -> void:
 	if range_cells <= 0:
 		return
-	var fill = Color(1.0, 0.95, 0.4, 0.12)
 	for dy in range(-range_cells, range_cells + 1):
 		var span = range_cells - abs(dy)
 		var y = cy + dy
@@ -71,7 +76,6 @@ func _draw_command_diamond(cx: int, cy: int, range_cells: int, cs: float, bw: in
 			fill
 		)
 	# Outline the diamond's four edges
-	var outline = Color(1.0, 0.9, 0.3, 0.8)
 	var top = Vector2((cx + 0.5) * cs, (cy - range_cells) * cs)
 	var bottom = Vector2((cx + 0.5) * cs, (cy + range_cells + 1) * cs)
 	var left = Vector2((cx - range_cells) * cs, (cy + 0.5) * cs)
@@ -80,3 +84,96 @@ func _draw_command_diamond(cx: int, cy: int, range_cells: int, cs: float, bw: in
 	draw_line(right, bottom, outline, 1.5)
 	draw_line(bottom, left, outline, 1.5)
 	draw_line(left, top, outline, 1.5)
+
+
+## Draw reach diamond + valid-target cell outlines for the acting unit during
+## order_execute. Reach semantics mirror game_engine.gd:
+##   volley_fire      → weapon_range from unit.pos
+##   march            → M + move_bonus from unit.pos (no targets)
+##   charge           → M + move_bonus from unit.pos (enemies within)
+##   move_and_shoot   → M (or move_bonus if blundered) from unit.pos for the
+##                      move; after staging, weapon_range from the staged cell
+##                      for the shot.
+func _draw_order_execute_overlay(state, cs: float, bw: int, bh: int) -> void:
+	var unit = battle_ref._get_unit_by_id(state.current_order_unit_id)
+	if not unit or unit.x < 0 or unit.y < 0:
+		return
+
+	# Only show hints to the seat whose turn it is.
+	if unit.owner_seat != battle_ref.my_seat:
+		return
+
+	var order_type: String = state.current_order_type
+	var move_bonus: int = state.current_order_move_bonus
+	var blundered: bool = state.current_order_blundered
+
+	# Cyan for move reach, orange for weapon/shoot reach, red for charge reach.
+	var move_fill = Color(0.3, 0.8, 1.0, 0.10)
+	var move_outline = Color(0.4, 0.85, 1.0, 0.7)
+	var shoot_fill = Color(1.0, 0.6, 0.2, 0.10)
+	var shoot_outline = Color(1.0, 0.7, 0.3, 0.75)
+	var charge_fill = Color(1.0, 0.3, 0.3, 0.10)
+	var charge_outline = Color(1.0, 0.4, 0.3, 0.75)
+
+	var target_cells: Array = []
+
+	match order_type:
+		"volley_fire":
+			var reach = unit.base_stats.weapon_range
+			_draw_range_diamond(unit.x, unit.y, reach, cs, bw, bh, shoot_fill, shoot_outline)
+			target_cells = _enemy_cells_within(unit.x, unit.y, reach, unit.owner_seat)
+		"march":
+			var reach = unit.base_stats.movement + move_bonus
+			_draw_range_diamond(unit.x, unit.y, reach, cs, bw, bh, move_fill, move_outline)
+		"charge":
+			var reach = unit.base_stats.movement + move_bonus
+			_draw_range_diamond(unit.x, unit.y, reach, cs, bw, bh, charge_fill, charge_outline)
+			target_cells = _enemy_cells_within(unit.x, unit.y, reach, unit.owner_seat)
+		"move_and_shoot":
+			var max_move: int = unit.base_stats.movement
+			if blundered:
+				max_move = move_bonus
+			if battle_ref.pending_move_x < 0:
+				_draw_range_diamond(unit.x, unit.y, max_move, cs, bw, bh, move_fill, move_outline)
+			else:
+				var px: int = battle_ref.pending_move_x
+				var py: int = battle_ref.pending_move_y
+				# Fading outline of move reach for context
+				_draw_range_diamond(unit.x, unit.y, max_move, cs, bw, bh,
+					Color(0.3, 0.8, 1.0, 0.04), Color(0.4, 0.85, 1.0, 0.35))
+				# Shoot reach from the staged cell
+				var reach = unit.base_stats.weapon_range
+				_draw_range_diamond(px, py, reach, cs, bw, bh, shoot_fill, shoot_outline)
+				target_cells = _enemy_cells_within(px, py, reach, unit.owner_seat)
+				# Mark the staged cell itself
+				draw_rect(Rect2(px * cs, py * cs, cs, cs), Color(1.0, 1.0, 0.4, 0.25))
+				draw_rect(Rect2(px * cs, py * cs, cs, cs), Color(1.0, 1.0, 0.4, 0.9), false, 2.0)
+
+	# Green ring around each valid enemy target cell.
+	var target_ring = Color(0.4, 1.0, 0.4, 0.95)
+	var inset = maxf(1.5, cs * 0.08)
+	for cell in target_cells:
+		draw_rect(
+			Rect2(cell.x * cs + inset, cell.y * cs + inset, cs - inset * 2, cs - inset * 2),
+			target_ring, false, 2.0
+		)
+
+
+## Return cell coords of alive enemies within Manhattan distance `reach` of
+## (cx, cy). Empty when reach <= 0.
+func _enemy_cells_within(cx: int, cy: int, reach: int, own_seat: int) -> Array:
+	var out: Array = []
+	if reach <= 0:
+		return out
+	var state = battle_ref.current_game_state
+	if not state:
+		return out
+	for u in state.units:
+		if u.is_dead or u.owner_seat == own_seat:
+			continue
+		if u.x < 0 or u.y < 0:
+			continue
+		var d: int = abs(u.x - cx) + abs(u.y - cy)
+		if d <= reach:
+			out.append(Vector2i(u.x, u.y))
+	return out
