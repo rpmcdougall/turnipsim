@@ -356,10 +356,24 @@ func _render_state() -> void:
 	_reconcile_selection_state()
 
 	var is_my_turn = current_game_state.active_seat == my_seat
-	turn_banner.text = "Round %d — Player %d %s" % [
+	var turn_suffix := "(Your turn)"
+	if not is_my_turn:
+		turn_suffix = "(Opponent's turn)"
+	var objs_1: int = 0
+	var objs_2: int = 0
+	for obj in current_game_state.objectives:
+		if obj.captured_by == 1:
+			objs_1 += 1
+		elif obj.captured_by == 2:
+			objs_2 += 1
+	var objective_tag := ""
+	if current_game_state.objectives.size() > 0:
+		objective_tag = "   |   Objectives P1: %d · P2: %d" % [objs_1, objs_2]
+	turn_banner.text = "Round %d — Player %d %s%s" % [
 		current_game_state.current_round,
 		current_game_state.active_seat,
-		"(Your turn)" if is_my_turn else "(Opponent's turn)"
+		turn_suffix,
+		objective_tag
 	]
 
 	# Hide all order-phase panels first
