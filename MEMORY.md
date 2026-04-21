@@ -18,7 +18,7 @@
 | 4.5 — v17 order mechanics | ✅ | **PR #32 (issue #31)** — this session |
 | 5 — Polish | 🚧 | #22 ✅ (PR #35), #21 ✅ (PR #39 — range diamonds + target rings during order_execute, immobile order hiding), #36 Todo (objectives, replaces placeholder tiebreak) |
 | 5b — Army submission UI | ✅ | PR #37 merged (#28) — preset dropdown + custom slot builder with live validation, preset pre-fill, per-slot stats |
-| 6 — Deploy | ⬜ | #23–25 Todo. **Gate:** #38 (v17 rules-accuracy audit) should precede deploy |
+| 6 — Deploy | ⬜ | #23–25 Todo. **Gates:** #38 (rules-accuracy audit) + #40 (simultaneous return fire + retreat) should precede deploy |
 | 7 — Cult mechanics | ⬜ | #29 Todo. #38's ammo-type plumbing will generalize into Grand Bombard (p.42) |
 
 ## Architecture quick-ref
