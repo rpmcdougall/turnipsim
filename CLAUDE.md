@@ -40,10 +40,10 @@ godot/
 - [ ] **Phase 1** — Game data: v17 types, ruleset JSON, roster format ← REWORKING (was MVP, now v17)
 - [x] ~~Phase 2~~ — Removed (was: Army rolling UI — replaced by Phase 5b)
 - [x] **Phase 3** — ENet networking, lobby, room management (commit 91047e5)
-- [ ] **Phase 4** — Battle gameplay (server-authoritative)
-- [ ] **Phase 5** — Polish
-- [ ] **Phase 5b** — Army Submission UI (roster builder + presets)
-- [ ] **Phase 6** — Export presets, deployment
+- [ ] **Phase 4** — Battle gameplay (server-authoritative) ← IN PROGRESS: v17 rules accuracy (#38 sub-issues)
+- [x] **Phase 5** — Polish (targeting visibility, victory conditions, objective scoring)
+- [x] **Phase 5b** — Army Submission UI (roster builder + presets)
+- [ ] **Phase 6** — Export presets, deployment (gated on #38 audit, #42 cult audit)
 - [ ] **Phase 7** — Cult mechanics (cult-specific units, special rules, army mods)
 
 ## Conventions

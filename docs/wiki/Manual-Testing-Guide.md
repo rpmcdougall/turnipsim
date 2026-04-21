@@ -126,7 +126,7 @@ The fastest way to force each path without an hour-long game:
 | Command-range circle | Appears around Snob on declare, matches the target list exactly | Circle and target list disagree |
 | Order button enable state | Disabled for invalid orders (volley_fire with no range, etc.) | Button stays enabled → server rejects the action |
 | Blunder panic | `+1 panic` in unit info when order blundered | Panic not applied |
-| Charge panic test | Target with panic tokens may flee (melee skipped, +1 panic). Fearless units (Brutes, Fodder 8+) get 3+ override. 0-token targets auto-pass. | Panic test not logged, melee always resolves regardless of tokens |
+| Charge panic test | Target with panic tokens may fail (D6+tokens ≥ 7). Failed = +1 panic token, target retreats away from charger (2" per token), melee skipped. Fearless (Brutes, Fodder 8+) get 3+ override. 0-token targets auto-pass. Board edge retreat = destroyed. | Panic test not logged, target doesn't move on failed test, melee always resolves |
 | Move & Shoot two-click | Destination staged → Confirm button appears | Confirm never appears, or first click executes immediately |
 | Round advance | `has_ordered` clears on all units, powder smoke gone | Units stay marked ordered across rounds |
 
