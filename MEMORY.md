@@ -1,8 +1,8 @@
 # Turnip28 Simulator - Project Memory
 
 **Last Updated:** 2026-04-20
-**Current state:** Phase 5 targeting-visibility polish shipped (PR #39, closes #21). PR #37 (roster builder, #28) and PR #35 (victory conditions) merged earlier this day. Issue #38 filed for pre-deploy v17 rules-accuracy audit (discovered StumpGun ammo types / Unstable Icon gaps mid-test).
-**Active branch:** `main` (clean — ready for next pickup)
+**Current state:** v17 rules-accuracy audit (#38) complete; PR [#43](https://github.com/rpmcdougall/turnipsim/pull/43) in flight with the first data-correction slice. 16 sub-issues filed (#44–#59) covering all audit gaps, all on the project board. PR #41 (objectives, closes #36), PR #39 (targeting, closes #21), PR #37 (roster builder, closes #28), PR #35 (victory conditions) all merged.
+**Active branch:** `feature/rules-audit-v17` (PR #43 open awaiting merge)
 
 ## Phase status
 
@@ -16,10 +16,11 @@
 | 4 — Battle engine (initial) | ✅ | PR #26 — later replaced by v17 order state machine (PR #32) |
 | 4.5 — v17 data model | ✅ | PR #30 (issue #27) |
 | 4.5 — v17 order mechanics | ✅ | **PR #32 (issue #31)** — this session |
-| 5 — Polish | 🚧 | #22 ✅ (PR #35), #21 ✅ (PR #39 — range diamonds + target rings during order_execute, immobile order hiding), #36 Todo (objectives, replaces placeholder tiebreak) |
+| 5 — Polish | ✅ (scoped) | #22 ✅ (PR #35), #21 ✅ (PR #39 — flagged bullets only; sprites/camera/tooltips deferred), #36 ✅ (PR #41 — v17 objective scoring) |
 | 5b — Army submission UI | ✅ | PR #37 merged (#28) — preset dropdown + custom slot builder with live validation, preset pre-fill, per-slot stats |
-| 6 — Deploy | ⬜ | #23–25 Todo. **Gates:** #38 (rules-accuracy audit) + #40 (simultaneous return fire + retreat) should precede deploy |
-| 7 — Cult mechanics | ⬜ | #29 Todo. #38's ammo-type plumbing will generalize into Grand Bombard (p.42) |
+| 5.5 — Rules-accuracy pass | 🚧 | #38 umbrella; PR #43 in flight. 16 sub-issues (#44–#59) cover all audit gaps. See `memory/checkpoint-2026-04-20-rules-audit.md` for catalog. |
+| 6 — Deploy | ⬜ | #23–25 Todo. **Gates:** #38 audit + #40 (return fire + retreat) + #42 (Cult audit) before deploy |
+| 7 — Cult mechanics | ⬜ | #29 Todo. #38's ammo-type plumbing will generalize into Grand Bombard (p.42). Validated against rules via #42. |
 
 ## Architecture quick-ref
 
@@ -120,11 +121,20 @@ Per-process logs land in `test-logs/` (gitignored). Ctrl+C tears everything down
 - `memory/checkpoint-2026-04-18-phase-4-ui.md`
 - `memory/checkpoint-2026-04-19-order-mechanics.md`
 - `memory/checkpoint-2026-04-20-victory-conditions.md`
-- `memory/checkpoint-2026-04-20-roster-builder.md` ← this session
+- `memory/checkpoint-2026-04-20-roster-builder.md`
+- `memory/checkpoint-2026-04-20-rules-audit.md` ← this session
 
 ## Next pickup
 
-- **#36** — v17 objectives (replaces placeholder max-rounds tiebreak with real scoring). Self-contained, natural rules-accuracy warmup before #38.
-- **#38** — full v17 rules-accuracy audit (StumpGun ammo types, Unstable Icon, Preliminary Bombardment, per-unit specials). Gate before deploy. See `memory/rules_accuracy_gaps.md` for seed list.
-- **Phase 6** — export presets + deploy (#23–25). Do #38 first.
-- Remaining #21 scope (sprites, particles, tooltips, camera pan/zoom, placement-undo) — deferred; PR #39 only shipped the three items flagged in the issue comment.
+Primary track = rules-accuracy (#38) sub-issues. Suggested order:
+1. **#44** — grid-vs-inches decision. Meta, gates LoS / 1" rule / range math. Small discussion + decision-log entry in CLAUDE.md.
+2. **#52** — panic test subsystem. Foundational; unlocks charge panic, retreat, Fearless, Safety in Numbers, Bowel-Loosening.
+3. **#53** — retreat subsystem. Depends on #52.
+4. **#55** — two-sided melee bouts. Depends on #52 / #53.
+5. **#56** — LoS + closest-target. Depends on #44.
+6. Independent mediums interleaved: #45 (Improbable Hits), #46 (1" rule), #47 (charge fixes), #48 (snob-moves-with-unit), #49 (reroll infra), #50 (Vanguard), #51 (Dash), #54 (Stand and Shoot), #57 (Toff Off).
+7. **#58** terrain, **#59** scenarios — systems-sized, coordinate with scenario data memory.
+8. **#42** — Cult rules audit. Last pre-deploy gate.
+9. Phase 6 (#23–25) — after #38 and #40 and #42.
+
+Deferred #21 bullets (sprites, camera, tooltips, placement-undo) — not blocking anything; revisit post-deploy.
