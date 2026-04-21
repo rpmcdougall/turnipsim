@@ -293,6 +293,10 @@ func request_action(action_data: Dictionary) -> void:
 
 		"execute_order":
 			var params = action_data.get("params", {})
+			# Charge: server rolls panic test + fearless dice for the target.
+			if state.current_order_type == "charge" and not params.get("fizzle", false):
+				params["panic_die"] = _roll_d6()
+				params["fearless_die"] = _roll_d6()
 			var dice = _roll_execute_dice(state)
 			result = GameEngine.execute_order(state, params, dice)
 

@@ -20,6 +20,7 @@ func _init() -> void:
 	_test_execute_move_and_shoot()
 	_test_execute_march()
 	_test_execute_charge()
+	_test_panic_test()
 	_test_advance_flow()
 	_test_victory_conditions()
 	_test_objectives()
@@ -606,6 +607,132 @@ func _test_execute_charge() -> void:
 
 		var result = GameEngine.execute_order(state, {"fizzle": true}, [])
 		return not result.success and "Cannot fizzle" in result.error
+	)
+
+
+func _test_panic_test() -> void:
+	print("\n[Test Suite: Panic Test]")
+
+	_test("panic_test: 0 tokens auto-passes", func():
+		var unit = _mock_unit("u0", 1, "Fodder", "infantry", 6, 1, 6, 1, 6, 0, 12)
+		unit.panic_tokens = 0
+		var result = GameEngine._panic_test(unit, 6, 1)
+		return result["passed"] and result["auto_passed"]
+	)
+
+	_test("panic_test: natural 1 always passes regardless of tokens", func():
+		var unit = _mock_unit("u0", 1, "Fodder", "infantry", 6, 1, 6, 1, 6, 0, 12)
+		unit.panic_tokens = 6  # max tokens, but die=1 → pass
+		var result = GameEngine._panic_test(unit, 1, 1)
+		return result["passed"] and not result["auto_passed"]
+	)
+
+	_test("panic_test: D6 + tokens <= 6 passes", func():
+		var unit = _mock_unit("u0", 1, "Fodder", "infantry", 6, 1, 6, 1, 6, 0, 12)
+		unit.panic_tokens = 3  # die=3, total=6 ≤ 6 → pass
+		var result = GameEngine._panic_test(unit, 3, 1)
+		return result["passed"] and result["total"] == 6
+	)
+
+	_test("panic_test: D6 + tokens >= 7 fails", func():
+		var unit = _mock_unit("u0", 1, "Fodder", "infantry", 6, 1, 6, 1, 6, 0, 12)
+		unit.panic_tokens = 3  # die=4, total=7 ≥ 7 → fail
+		var result = GameEngine._panic_test(unit, 4, 1)
+		return not result["passed"] and result["total"] == 7
+	)
+
+	_test("panic_test: Fearless unit overrides fail on 3+", func():
+		var stats = Types.Stats.new(6, 2, 5, 1, 5, 18)
+		var rules: Array[String] = ["fearless"]
+		var unit = Types.UnitState.new("u0", 1, "Brutes", "infantry", 6, 6, stats, "black_powder", rules)
+		unit.panic_tokens = 4  # die=5, total=9 → fail, but Fearless 3+ saves
+		var result = GameEngine._panic_test(unit, 5, 3)
+		return result["passed"] and result["fearless_override"] and result["used_fearless"]
+	)
+
+	_test("panic_test: Fearless unit fails override on 1-2", func():
+		var stats = Types.Stats.new(6, 2, 5, 1, 5, 18)
+		var rules: Array[String] = ["fearless"]
+		var unit = Types.UnitState.new("u0", 1, "Brutes", "infantry", 6, 6, stats, "black_powder", rules)
+		unit.panic_tokens = 4  # die=5, total=9 → fail, Fearless die=2 → still fails
+		var result = GameEngine._panic_test(unit, 5, 2)
+		return not result["passed"] and result["used_fearless"] and not result["fearless_override"]
+	)
+
+	_test("panic_test: Safety in Numbers grants Fearless at 8+ models", func():
+		var stats = Types.Stats.new(6, 1, 6, 1, 6, 0)
+		var rules: Array[String] = ["safety_in_numbers"]
+		var unit = Types.UnitState.new("u0", 1, "Fodder", "infantry", 8, 12, stats, "black_powder", rules)
+		unit.panic_tokens = 4
+		var result = GameEngine._panic_test(unit, 5, 4)  # total=9, Fearless die=4 → override
+		return result["passed"] and result["fearless_override"]
+	)
+
+	_test("panic_test: Safety in Numbers loses Fearless below 8 models", func():
+		var stats = Types.Stats.new(6, 1, 6, 1, 6, 0)
+		var rules: Array[String] = ["safety_in_numbers"]
+		var unit = Types.UnitState.new("u0", 1, "Fodder", "infantry", 7, 12, stats, "black_powder", rules)
+		unit.panic_tokens = 4
+		var result = GameEngine._panic_test(unit, 5, 4)  # total=9, but not Fearless → fails
+		return not result["passed"] and not result["used_fearless"]
+	)
+
+	# -- Charge integration --
+
+	_test("charge: target with panic tokens fails test and flees (no melee)", func():
+		var state = _mock_orders_state()
+		state.units[0].x = 10; state.units[0].y = 10
+		state.units[1].x = 15; state.units[1].y = 10
+		state.units[1].panic_tokens = 4  # die=4 → total=8 ≥ 7 → fail
+		state = GameEngine.select_snob(state, state.units[0].id).new_state
+		state = GameEngine.declare_order(state, state.units[0].id, "charge", 3, [3, 3]).new_state
+
+		var params = {"target_id": state.units[1].id, "panic_die": 4, "fearless_die": 1}
+		var result = GameEngine.execute_order(state, params, [5, 5, 1, 1])
+
+		return (result.success
+			and result.new_state.units[0].x == 14  # charger still moved adjacent
+			and not result.new_state.units[1].is_dead  # no melee happened
+			and result.new_state.units[1].panic_tokens == 5  # +1 from failed test
+			and result.new_state.units[1].current_wounds == 0)
+	)
+
+	_test("charge: target passes panic test, melee resolves normally", func():
+		var state = _mock_orders_state()
+		state.units[0].x = 10; state.units[0].y = 10
+		state.units[1].x = 15; state.units[1].y = 10
+		state.units[1].panic_tokens = 2  # die=3 → total=5 ≤ 6 → pass
+		state = GameEngine.select_snob(state, state.units[0].id).new_state
+		state = GameEngine.declare_order(state, state.units[0].id, "charge", 3, [3, 3]).new_state
+
+		var params = {"target_id": state.units[1].id, "panic_die": 3, "fearless_die": 1}
+		var result = GameEngine.execute_order(state, params, [5, 5, 1, 1])
+
+		return (result.success
+			and result.new_state.units[1].is_dead  # melee resolved, target killed
+			and result.new_state.units[1].panic_tokens == 2)  # no extra panic
+	)
+
+	_test("charge: Fearless target holds despite failed panic roll", func():
+		var state = _mock_orders_state()
+		state.units[0].x = 10; state.units[0].y = 10
+		# Replace u1 with Brutes (Fearless)
+		var stats = Types.Stats.new(6, 2, 5, 2, 5, 18)
+		var rules: Array[String] = ["fearless"]
+		state.units[1] = Types.UnitState.new("u1", 2, "Brutes", "infantry", 6, 6, stats, "black_powder", rules)
+		state.units[1].x = 15; state.units[1].y = 10
+		state.units[1].panic_tokens = 4  # die=5 → total=9, Fearless die=3 → override
+		state = GameEngine.select_snob(state, state.units[0].id).new_state
+		state = GameEngine.declare_order(state, state.units[0].id, "charge", 3, [3, 3]).new_state
+
+		var params = {"target_id": state.units[1].id, "panic_die": 5, "fearless_die": 3}
+		# Toff A=2, 1 model → 2 attacks → 4 dice needed (2 inac + 2 vuln)
+		var result = GameEngine.execute_order(state, params, [5, 5, 1, 1])
+
+		return (result.success
+			and result.new_state.units[0].x == 14  # charger moved
+			and result.new_state.units[1].panic_tokens == 4  # no extra panic (passed)
+			and result.new_state.units[1].model_count < 6)  # melee happened, took casualties
 	)
 
 
