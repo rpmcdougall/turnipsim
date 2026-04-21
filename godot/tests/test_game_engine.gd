@@ -158,6 +158,19 @@ func _test_declare_order() -> void:
 		return not result.success and "command range" in result.error
 	)
 
+	_test("declare_order: diagonal follower within Euclidean command range succeeds", func():
+		var state = _mock_orders_state()
+		# Toff at (10,30), command_range=6. Place Fodder diagonally:
+		# dx=4, dy=4. Euclidean = sqrt(32) ≈ 5.66 ≤ 6. In range.
+		# Manhattan would be 8 > 6 → rejected. Proves Euclidean.
+		state.units[2].x = 14; state.units[2].y = 26
+		state = GameEngine.select_snob(state, state.units[0].id).new_state
+
+		var result = GameEngine.declare_order(state, state.units[2].id, "march", 3, [3, 3])
+
+		return result.success
+	)
+
 	_test("declare_order: Snob self-order bypasses blunder check", func():
 		var state = _mock_orders_state()
 		state = GameEngine.select_snob(state, state.units[0].id).new_state
@@ -356,6 +369,20 @@ func _test_execute_volley_fire() -> void:
 		return not result.success and "Cannot fizzle" in result.error
 	)
 
+	_test("volley_fire: diagonal target within Euclidean range is valid", func():
+		var state = _mock_orders_state()
+		state.units[0].x = 10; state.units[0].y = 15
+		state.units[0].base_stats.weapon_range = 18
+		# Place enemy diagonally: dx=12, dy=12. Euclidean = sqrt(288) ≈ 16.97 ≤ 18.
+		# Manhattan would be 24 > 18 → out of range. Proves Euclidean works.
+		state.units[1].x = 22; state.units[1].y = 27
+		state = GameEngine.select_snob(state, state.units[0].id).new_state
+		state = GameEngine.declare_order(state, state.units[0].id, "volley_fire", 3, [3, 3]).new_state
+
+		var result = GameEngine.execute_order(state, {"target_id": state.units[1].id}, [6, 1])
+		return result.success
+	)
+
 	_test("volley_fire: multi-model unit fires one attack per model", func():
 		var state = _mock_orders_state_ranged()
 		# Make Fodder a 4-model ranged unit
@@ -491,6 +518,20 @@ func _test_execute_march() -> void:
 		var result = GameEngine.execute_order(state, {"x": 10, "y": 10}, [])
 
 		return not result.success and "march range" in result.error
+	)
+
+	_test("march: diagonal move within Euclidean range succeeds (would fail Manhattan)", func():
+		var state = _mock_orders_state()
+		state.units[0].x = 10; state.units[0].y = 15
+		state = GameEngine.select_snob(state, state.units[0].id).new_state
+		# Self-order march, bonus = 6+4=10. Toff M=6 → max 16.
+		state = GameEngine.declare_order(state, state.units[0].id, "march", 3, [6, 4]).new_state
+
+		# (21, 26) → dx=11, dy=11. Euclidean = sqrt(242) ≈ 15.56 ≤ 16. OK.
+		# Manhattan would be 22 > 16 → rejected. This test proves Euclidean is active.
+		var result = GameEngine.execute_order(state, {"x": 21, "y": 26}, [])
+
+		return result.success and result.new_state.units[0].x == 21
 	)
 
 

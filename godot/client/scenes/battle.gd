@@ -842,11 +842,13 @@ func _on_execute_confirm_pressed() -> void:
 func _has_valid_enemy_in_range(unit: Types.UnitState, reach: int) -> bool:
 	if reach <= 0:
 		return false
+	var r_sq: float = float(reach * reach)
 	for u in current_game_state.units:
 		if u.is_dead or u.owner_seat == unit.owner_seat:
 			continue
-		var d: int = abs(u.x - unit.x) + abs(u.y - unit.y)
-		if d <= reach:
+		var dx: int = u.x - unit.x
+		var dy: int = u.y - unit.y
+		if float(dx * dx + dy * dy) <= r_sq:
 			return true
 	return false
 
@@ -856,7 +858,7 @@ func _has_valid_enemy_in_range(unit: Types.UnitState, reach: int) -> bool:
 # =============================================================================
 
 ## Targets a player may legally pick in order_declare: the commanding Snob
-## itself, plus alive unordered followers within Manhattan command range.
+## itself, plus alive unordered followers within Euclidean command range.
 func _declare_valid_targets() -> Array:
 	var results: Array = []
 	var snob = _get_unit_by_id(current_game_state.current_snob_id)
@@ -865,11 +867,13 @@ func _declare_valid_targets() -> Array:
 	# Snob can always self-order
 	results.append(snob)
 	var cmd_range = snob.get_command_range()
+	var cr_sq: float = float(cmd_range * cmd_range)
 	for unit in current_game_state.units:
 		if (unit.owner_seat == my_seat and not unit.is_snob()
 				and not unit.is_dead and not unit.has_ordered):
-			var dist = abs(unit.x - snob.x) + abs(unit.y - snob.y)
-			if dist <= cmd_range:
+			var dx: int = unit.x - snob.x
+			var dy: int = unit.y - snob.y
+			if float(dx * dx + dy * dy) <= cr_sq:
 				results.append(unit)
 	return results
 

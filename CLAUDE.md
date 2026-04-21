@@ -32,6 +32,7 @@ godot/
 - **gl_compatibility renderer**: Lightest option, no Vulkan requirement
 - **`game/` no-node contract**: Everything in `game/` must be pure RefCounted — no Node, no scene tree, no signals. Safe to use from server, client, or headless tests.
 - **Runtime mode detection**: `--server` CLI arg or `dedicated_server` feature tag → `NetworkManager.is_server`
+- **Euclidean distance on integer grid**: All range/movement checks use `sqrt(dx² + dy²)` instead of Manhattan distance. 1 cell = 1 inch. Grid positions stay integer; only distance comparisons use floats. Diagonal ranges are geometrically correct. Range visualizations are circles, not diamonds. Decision made in #44.
 
 ## Phase Status
 
