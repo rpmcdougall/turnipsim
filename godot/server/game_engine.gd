@@ -18,6 +18,15 @@ extends RefCounted
 const BOARD_WIDTH: int = 48
 const BOARD_HEIGHT: int = 32
 
+
+## Euclidean distance between two grid cells.
+## All range/movement checks use this instead of Manhattan distance so that
+## diagonal distances are geometrically correct (1 cell = 1 inch).
+static func _grid_distance(x1: int, y1: int, x2: int, y2: int) -> float:
+	var dx: int = x2 - x1
+	var dy: int = y2 - y1
+	return sqrt(float(dx * dx + dy * dy))
+
 # Deployment zones (4 rows each)
 const DEPLOYMENT_ZONE_1_Y_MIN: int = 28  # Bottom (seat 1)
 const DEPLOYMENT_ZONE_1_Y_MAX: int = 31
@@ -245,9 +254,9 @@ static func declare_order(state: Types.GameState, unit_id: String, order_type: S
 		if unit.is_snob():
 			result.error = "Cannot order another Snob"
 			return result
-		var distance = abs(unit.x - snob.x) + abs(unit.y - snob.y)
+		var distance = _grid_distance(snob.x, snob.y, unit.x, unit.y)
 		if distance > snob.get_command_range():
-			result.error = "Unit out of command range (%d > %d)" % [distance, snob.get_command_range()]
+			result.error = "Unit out of command range (%.1f > %d)" % [distance, snob.get_command_range()]
 			return result
 
 	# Validate order type
@@ -490,7 +499,7 @@ static func _execute_volley_fire(state: Types.GameState, unit: Types.UnitState, 
 		return result
 
 	# Range check
-	var distance = abs(target.x - unit.x) + abs(target.y - unit.y)
+	var distance = _grid_distance(unit.x, unit.y, target.x, target.y)
 	if distance > unit.base_stats.weapon_range:
 		result.error = "Target out of range (max %d)" % unit.base_stats.weapon_range
 		return result
@@ -553,7 +562,7 @@ static func _execute_move_and_shoot(state: Types.GameState, unit: Types.UnitStat
 	var max_move = unit.base_stats.movement
 	if state.current_order_blundered:
 		max_move = state.current_order_move_bonus  # D6 result stored during declare
-	var distance = abs(x - unit.x) + abs(y - unit.y)
+	var distance = _grid_distance(unit.x, unit.y, x, y)
 	if distance > max_move:
 		result.error = "Out of movement range (max %d)" % max_move
 		return result
@@ -572,7 +581,7 @@ static func _execute_move_and_shoot(state: Types.GameState, unit: Types.UnitStat
 		new_target = _find_unit_in(new_state, target_id)
 		if new_target and not new_target.is_dead and new_target.owner_seat != unit.owner_seat:
 			# Check range from new position
-			var shoot_dist = abs(new_target.x - x) + abs(new_target.y - y)
+			var shoot_dist = _grid_distance(x, y, new_target.x, new_target.y)
 			if shoot_dist <= new_unit.base_stats.weapon_range and not new_unit.has_powder_smoke:
 				combat = _resolve_shooting(new_unit, new_target, dice_results, 0)
 
@@ -618,7 +627,7 @@ static func _execute_march(state: Types.GameState, unit: Types.UnitState, params
 
 	# March range: M + move_bonus (2D6 or 1D6 if blundered)
 	var max_move = unit.base_stats.movement + state.current_order_move_bonus
-	var distance = abs(x - unit.x) + abs(y - unit.y)
+	var distance = _grid_distance(unit.x, unit.y, x, y)
 	if distance > max_move:
 		result.error = "Out of march range (max %d = M%d + %d)" % [max_move, unit.base_stats.movement, state.current_order_move_bonus]
 		return result
@@ -688,9 +697,9 @@ static func _execute_charge(state: Types.GameState, unit: Types.UnitState, param
 
 	# Charge range: M + move_bonus. Must end adjacent (distance = 1) to target.
 	var charge_range = unit.base_stats.movement + state.current_order_move_bonus
-	var target_distance = abs(target.x - unit.x) + abs(target.y - unit.y)
+	var target_distance = _grid_distance(unit.x, unit.y, target.x, target.y)
 	if target_distance > charge_range:
-		result.error = "Target out of charge range (distance %d, max %d)" % [target_distance, charge_range]
+		result.error = "Target out of charge range (distance %.1f, max %d)" % [target_distance, charge_range]
 		return result
 
 	# Find an adjacent cell to the target to move to
@@ -700,9 +709,9 @@ static func _execute_charge(state: Types.GameState, unit: Types.UnitState, param
 		return result
 
 	# Verify the adjacent cell is within charge range
-	var move_distance = abs(charge_dest.x - unit.x) + abs(charge_dest.y - unit.y)
+	var move_distance = _grid_distance(unit.x, unit.y, charge_dest.x, charge_dest.y)
 	if move_distance > charge_range:
-		result.error = "Cannot reach target (need %d, have %d)" % [move_distance, charge_range]
+		result.error = "Cannot reach target (need %.1f, have %d)" % [move_distance, charge_range]
 		return result
 
 	var new_state = _clone_state(state)
@@ -1033,7 +1042,7 @@ static func _has_valid_volley_target(state: Types.GameState, unit: Types.UnitSta
 	for u in state.units:
 		if u.is_dead or u.owner_seat == unit.owner_seat:
 			continue
-		var d: int = abs(u.x - unit.x) + abs(u.y - unit.y)
+		var d := _grid_distance(unit.x, unit.y, u.x, u.y)
 		if d <= wr:
 			return true
 	return false
@@ -1047,7 +1056,7 @@ static func _has_valid_charge_target(state: Types.GameState, unit: Types.UnitSta
 	for u in state.units:
 		if u.is_dead or u.owner_seat == unit.owner_seat:
 			continue
-		var d: int = abs(u.x - unit.x) + abs(u.y - unit.y)
+		var d := _grid_distance(unit.x, unit.y, u.x, u.y)
 		if d <= reach:
 			return true
 	return false
@@ -1072,7 +1081,7 @@ static func get_followers_in_command_range(state: Types.GameState, snob_id: Stri
 
 	for unit in state.units:
 		if unit.owner_seat == snob.owner_seat and not unit.is_snob() and not unit.is_dead and not unit.has_ordered:
-			var distance = abs(unit.x - snob.x) + abs(unit.y - snob.y)
+			var distance = _grid_distance(snob.x, snob.y, unit.x, unit.y)
 			if distance <= cmd_range:
 				result.append(unit.id)
 
@@ -1107,7 +1116,8 @@ static func _is_objective_at(state: Types.GameState, x: int, y: int) -> bool:
 ##
 ## Rules modeled:
 ##   - Only Follower units capture (Snobs never do).
-##   - "Within 1"" maps to Manhattan distance == 1 (orthogonal neighbor).
+##   - "Within 1"" maps to Euclidean distance ≤ 1.0 (orthogonal neighbor).
+##     Diagonal neighbors (√2 ≈ 1.41) are outside 1" and do not capture.
 ##   - Objective cell itself is uncapturable-from; units can't end there.
 ##   - If only one seat has adjacent Followers → captured by that seat.
 ##   - If both seats have adjacent Followers → contested (uncaptured).
@@ -1126,8 +1136,8 @@ static func _resolve_objective_captures(state: Types.GameState) -> void:
 				continue
 			if u.x < 0 or u.y < 0:
 				continue
-			var d: int = abs(u.x - obj.x) + abs(u.y - obj.y)
-			if d == 1:
+			var d := _grid_distance(u.x, u.y, obj.x, obj.y)
+			if d <= 1.0:
 				if u.owner_seat == 1:
 					seat1_adjacent += 1
 				else:
@@ -1163,7 +1173,7 @@ static func _find_adjacent_cell(state: Types.GameState, charger: Types.UnitState
 		# Objective cells are invalid end-of-move destinations (v17 p.22).
 		if _is_objective_at(state, cx, cy):
 			continue
-		var dist = abs(cx - charger.x) + abs(cy - charger.y)
+		var dist = _grid_distance(charger.x, charger.y, cx, cy)
 		if dist < best_dist:
 			best_dist = dist
 			best = Vector2i(cx, cy)

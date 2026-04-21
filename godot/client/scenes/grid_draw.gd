@@ -53,11 +53,11 @@ func _draw() -> void:
 		for obj in state.objectives:
 			_draw_objective_marker(obj, cs)
 
-	# Command-range overlay: Manhattan diamond around the Made-Ready Snob.
+	# Command-range overlay: Euclidean circle around the Made-Ready Snob.
 	if state and state.order_phase == "order_declare" and state.current_snob_id != "":
 		var snob = battle_ref._get_unit_by_id(state.current_snob_id)
 		if snob and snob.x >= 0 and snob.y >= 0:
-			_draw_range_diamond(snob.x, snob.y, snob.get_command_range(), cs, bw, bh,
+			_draw_range_circle(snob.x, snob.y, snob.get_command_range(), cs, bw, bh,
 				Color(1.0, 0.95, 0.4, 0.12), Color(1.0, 0.9, 0.3, 0.8))
 
 	# Order-execute overlay: reach diamond + valid target outlines for the
@@ -93,35 +93,30 @@ func _draw_objective_marker(obj, cs: float) -> void:
 		draw_circle(center, radius * 0.35, outline)
 
 
-## Fill every cell whose Manhattan distance from (cx, cy) is ≤ range with a
-## translucent highlight, and outline the diamond boundary.
-func _draw_range_diamond(cx: int, cy: int, range_cells: int, cs: float, bw: int, bh: int, fill: Color, outline: Color) -> void:
+## Fill every cell whose Euclidean distance from (cx, cy) is ≤ range with a
+## translucent highlight, and outline the circle boundary.
+func _draw_range_circle(cx: int, cy: int, range_cells: int, cs: float, bw: int, bh: int, fill: Color, outline: Color) -> void:
 	if range_cells <= 0:
 		return
+	var r_sq: float = float(range_cells * range_cells)
 	for dy in range(-range_cells, range_cells + 1):
-		var span = range_cells - abs(dy)
 		var y = cy + dy
 		if y < 0 or y >= bh:
 			continue
-		var x_start = maxi(cx - span, 0)
-		var x_end = mini(cx + span, bw - 1)
-		draw_rect(
-			Rect2(x_start * cs, y * cs, (x_end - x_start + 1) * cs, cs),
-			fill
-		)
-	# Outline the diamond's four edges
-	var top = Vector2((cx + 0.5) * cs, (cy - range_cells) * cs)
-	var bottom = Vector2((cx + 0.5) * cs, (cy + range_cells + 1) * cs)
-	var left = Vector2((cx - range_cells) * cs, (cy + 0.5) * cs)
-	var right = Vector2((cx + range_cells + 1) * cs, (cy + 0.5) * cs)
-	draw_line(top, right, outline, 1.5)
-	draw_line(right, bottom, outline, 1.5)
-	draw_line(bottom, left, outline, 1.5)
-	draw_line(left, top, outline, 1.5)
+		for dx in range(-range_cells, range_cells + 1):
+			var x = cx + dx
+			if x < 0 or x >= bw:
+				continue
+			if float(dx * dx + dy * dy) <= r_sq:
+				draw_rect(Rect2(x * cs, y * cs, cs, cs), fill)
+	# Circle outline centered on the cell
+	var center = Vector2((cx + 0.5) * cs, (cy + 0.5) * cs)
+	var radius = (range_cells + 0.5) * cs
+	draw_arc(center, radius, 0.0, TAU, 64, outline, 1.5, true)
 
 
-## Draw reach diamond + valid-target cell outlines for the acting unit during
-## order_execute. Reach semantics mirror game_engine.gd:
+## Draw reach circle + valid-target cell outlines for the acting unit during
+## order_execute. Reach semantics mirror game_engine.gd (Euclidean distance):
 ##   volley_fire      → weapon_range from unit.pos
 ##   march            → M + move_bonus from unit.pos (no targets)
 ##   charge           → M + move_bonus from unit.pos (enemies within)
@@ -154,30 +149,30 @@ func _draw_order_execute_overlay(state, cs: float, bw: int, bh: int) -> void:
 	match order_type:
 		"volley_fire":
 			var reach = unit.base_stats.weapon_range
-			_draw_range_diamond(unit.x, unit.y, reach, cs, bw, bh, shoot_fill, shoot_outline)
+			_draw_range_circle(unit.x, unit.y, reach, cs, bw, bh, shoot_fill, shoot_outline)
 			target_cells = _enemy_cells_within(unit.x, unit.y, reach, unit.owner_seat)
 		"march":
 			var reach = unit.base_stats.movement + move_bonus
-			_draw_range_diamond(unit.x, unit.y, reach, cs, bw, bh, move_fill, move_outline)
+			_draw_range_circle(unit.x, unit.y, reach, cs, bw, bh, move_fill, move_outline)
 		"charge":
 			var reach = unit.base_stats.movement + move_bonus
-			_draw_range_diamond(unit.x, unit.y, reach, cs, bw, bh, charge_fill, charge_outline)
+			_draw_range_circle(unit.x, unit.y, reach, cs, bw, bh, charge_fill, charge_outline)
 			target_cells = _enemy_cells_within(unit.x, unit.y, reach, unit.owner_seat)
 		"move_and_shoot":
 			var max_move: int = unit.base_stats.movement
 			if blundered:
 				max_move = move_bonus
 			if battle_ref.pending_move_x < 0:
-				_draw_range_diamond(unit.x, unit.y, max_move, cs, bw, bh, move_fill, move_outline)
+				_draw_range_circle(unit.x, unit.y, max_move, cs, bw, bh, move_fill, move_outline)
 			else:
 				var px: int = battle_ref.pending_move_x
 				var py: int = battle_ref.pending_move_y
 				# Fading outline of move reach for context
-				_draw_range_diamond(unit.x, unit.y, max_move, cs, bw, bh,
+				_draw_range_circle(unit.x, unit.y, max_move, cs, bw, bh,
 					Color(0.3, 0.8, 1.0, 0.04), Color(0.4, 0.85, 1.0, 0.35))
 				# Shoot reach from the staged cell
 				var reach = unit.base_stats.weapon_range
-				_draw_range_diamond(px, py, reach, cs, bw, bh, shoot_fill, shoot_outline)
+				_draw_range_circle(px, py, reach, cs, bw, bh, shoot_fill, shoot_outline)
 				target_cells = _enemy_cells_within(px, py, reach, unit.owner_seat)
 				# Mark the staged cell itself
 				draw_rect(Rect2(px * cs, py * cs, cs, cs), Color(1.0, 1.0, 0.4, 0.25))
@@ -193,7 +188,7 @@ func _draw_order_execute_overlay(state, cs: float, bw: int, bh: int) -> void:
 		)
 
 
-## Return cell coords of alive enemies within Manhattan distance `reach` of
+## Return cell coords of alive enemies within Euclidean distance `reach` of
 ## (cx, cy). Empty when reach <= 0.
 func _enemy_cells_within(cx: int, cy: int, reach: int, own_seat: int) -> Array:
 	var out: Array = []
@@ -202,12 +197,14 @@ func _enemy_cells_within(cx: int, cy: int, reach: int, own_seat: int) -> Array:
 	var state = battle_ref.current_game_state
 	if not state:
 		return out
+	var r_sq: float = float(reach * reach)
 	for u in state.units:
 		if u.is_dead or u.owner_seat == own_seat:
 			continue
 		if u.x < 0 or u.y < 0:
 			continue
-		var d: int = abs(u.x - cx) + abs(u.y - cy)
-		if d <= reach:
+		var dx: int = u.x - cx
+		var dy: int = u.y - cy
+		if float(dx * dx + dy * dy) <= r_sq:
 			out.append(Vector2i(u.x, u.y))
 	return out
