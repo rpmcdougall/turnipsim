@@ -470,6 +470,23 @@ func _initialize_game_state(room) -> Dictionary:
 					"snob_id": snob_id
 				})
 
+	# Objective placement. v17 core p.22: "Every scenario will present the
+	# players with up to 5 objectives and instructions on how to place them."
+	# Real scenarios drive count + layout + placement rules (players taking
+	# turns to place). Until the scenario system lands (see memory note on
+	# scenarios_future_design), we auto-place 5 markers evenly along the
+	# centerline as a stand-in.
+	var objectives: Array = []
+	var centerline_y := 16  # Board is 48x32 (see battle.gd); midpoint.
+	var xs := [8, 16, 24, 32, 40]
+	for i in range(xs.size()):
+		objectives.append({
+			"id": "obj_%d" % i,
+			"x": xs[i],
+			"y": centerline_y,
+			"captured_by": 0
+		})
+
 	return {
 		"room_code": room.code,
 		"phase": "placement",
@@ -478,6 +495,7 @@ func _initialize_game_state(room) -> Dictionary:
 		"active_seat": initiative_seat,
 		"initiative_seat": initiative_seat,
 		"units": units,
+		"objectives": objectives,
 		"action_log": [],
 		"winner_seat": 0
 	}

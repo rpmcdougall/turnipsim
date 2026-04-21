@@ -22,6 +22,7 @@ func _init() -> void:
 	_test_execute_charge()
 	_test_advance_flow()
 	_test_victory_conditions()
+	_test_objectives()
 
 	print("")
 	print("============================================================")
@@ -691,41 +692,106 @@ func _test_victory_conditions() -> void:
 		return victory["winner"] == 0 and victory["reason"] == ""
 	)
 
-	_test("Max-rounds tiebreak: more surviving units wins", func():
+	_test("Round-limit: seat with more captured objectives wins", func():
 		var state = _mock_orders_state()
 		state.current_round = 5
 		state.max_rounds = 4
-		# Kill one seat 2 non-snob unit so seat 1 has more alive
-		for unit in state.units:
-			if unit.owner_seat == 2 and not unit.is_snob():
-				unit.is_dead = true
-				break
+		state.objectives = _mock_objectives([[1, 2], [1, 0], [2, 0]])
 
 		var victory = GameEngine.check_victory(state)
-		return victory["winner"] == 1 and "Time expired" in victory["reason"]
+		return victory["winner"] == 1 and "2 objective" in victory["reason"]
 	)
 
-	_test("Max-rounds tiebreak: equal units, more models wins", func():
+	_test("Round-limit: equal objective counts = draw (no model tiebreak)", func():
 		var state = _mock_orders_state()
 		state.current_round = 5
 		state.max_rounds = 4
-		# Both sides have same unit count alive; give seat 2 an extra model
+		# Equal objective counts; seat 2 has extra models → still a draw per v17.
+		state.objectives = _mock_objectives([[1, 0], [2, 0]])
 		for unit in state.units:
 			if unit.owner_seat == 2 and not unit.is_snob():
 				unit.model_count += 5
 				break
 
 		var victory = GameEngine.check_victory(state)
-		return victory["winner"] == 2 and "more models" in victory["reason"]
+		return victory["winner"] == 0 and "Draw" in victory["reason"]
 	)
 
-	_test("Max-rounds tiebreak: fully tied = draw", func():
+	_test("Round-limit: no captured objectives = 0–0 draw", func():
 		var state = _mock_orders_state()
 		state.current_round = 5
 		state.max_rounds = 4
+		state.objectives = _mock_objectives([[0, 0], [0, 0]])
 
 		var victory = GameEngine.check_victory(state)
 		return victory["winner"] == 0 and "Draw" in victory["reason"]
+	)
+
+
+# =============================================================================
+# OBJECTIVE CAPTURE / BLOCKING
+# =============================================================================
+
+func _test_objectives() -> void:
+	print("")
+	print("[Test Suite: Objectives]")
+
+	_test("Follower adjacent to uncaptured objective captures it", func():
+		var state = _mock_orders_state()
+		state.objectives = _mock_objectives_at([[20, 15]])
+		state.units[2].x = 20; state.units[2].y = 16  # seat 1 Follower
+		GameEngine._resolve_objective_captures(state)
+		return state.objectives[0].captured_by == 1
+	)
+
+	_test("Snob adjacent to objective does NOT capture", func():
+		var state = _mock_orders_state()
+		state.objectives = _mock_objectives_at([[10, 29]])
+		# Seat 1 Snob at (10, 30) is already adjacent to (10, 29).
+		GameEngine._resolve_objective_captures(state)
+		return state.objectives[0].captured_by == 0
+	)
+
+	_test("Contested objective (both seats adjacent) becomes uncaptured", func():
+		var state = _mock_orders_state()
+		state.objectives = _mock_objectives_at([[15, 15]])
+		state.objectives[0].captured_by = 1  # Pre-existing control
+		state.units[2].x = 15; state.units[2].y = 14  # seat 1 Follower
+		state.units[3].x = 15; state.units[3].y = 16  # seat 2 Follower
+		GameEngine._resolve_objective_captures(state)
+		return state.objectives[0].captured_by == 0
+	)
+
+	_test("Captured objective stays captured when the Follower leaves", func():
+		var state = _mock_orders_state()
+		state.objectives = _mock_objectives_at([[20, 15]])
+		state.objectives[0].captured_by = 2
+		# No followers adjacent at all.
+		state.units[2].x = 0; state.units[2].y = 0
+		state.units[3].x = 0; state.units[3].y = 31
+		GameEngine._resolve_objective_captures(state)
+		return state.objectives[0].captured_by == 2
+	)
+
+	_test("Enemy Follower entering a controlled objective flips capture", func():
+		var state = _mock_orders_state()
+		state.objectives = _mock_objectives_at([[20, 15]])
+		state.objectives[0].captured_by = 1
+		# Seat 2 Follower adjacent, seat 1 Follower far away.
+		state.units[2].x = 0; state.units[2].y = 0
+		state.units[3].x = 20; state.units[3].y = 14
+		GameEngine._resolve_objective_captures(state)
+		return state.objectives[0].captured_by == 2
+	)
+
+	_test("March onto an objective cell is rejected", func():
+		var state = _mock_orders_state()
+		state.objectives = _mock_objectives_at([[20, 15]])
+		var follower = state.units[2]
+		state = GameEngine.select_snob(state, state.units[0].id).new_state
+		state = GameEngine.declare_order(state, follower.id, "march", 4, [3, 3]).new_state
+		var res = GameEngine.execute_order(state, {"x": 20, "y": 15}, [])
+		return not res.success and "objective" in res.error
 	)
 
 
@@ -737,6 +803,26 @@ func _mock_unit(id: String, seat: int, unit_type: String, category: String, m: i
 	var stats = Types.Stats.new(m, a, i, w, v, wr)
 	var rules: Array[String] = []
 	return Types.UnitState.new(id, seat, unit_type, category, models, models, stats, "black_powder", rules)
+
+
+## Build an objectives list from [captured_by, placeholder] pairs. The second
+## element is unused — tests only care about captured_by — but the shape
+## keeps each entry visually distinct. Positions are synthetic (i*3, 10).
+func _mock_objectives(entries: Array) -> Array[Types.Objective]:
+	var out: Array[Types.Objective] = []
+	for i in range(entries.size()):
+		var entry = entries[i]
+		out.append(Types.Objective.new("obj_%d" % i, i * 3, 10, entry[0]))
+	return out
+
+
+## Objectives placed at explicit [x, y] coords, all starting uncaptured.
+func _mock_objectives_at(positions: Array) -> Array[Types.Objective]:
+	var out: Array[Types.Objective] = []
+	for i in range(positions.size()):
+		var p = positions[i]
+		out.append(Types.Objective.new("obj_%d" % i, p[0], p[1], 0))
+	return out
 
 
 func _mock_game_state() -> Types.GameState:
