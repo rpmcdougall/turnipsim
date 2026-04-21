@@ -1,8 +1,8 @@
 # Turnip28 Simulator - Project Memory
 
 **Last Updated:** 2026-04-20
-**Current state:** Phase 5b roster builder complete. PR [#37](https://github.com/rpmcdougall/turnipsim/pull/37) **open on `feature/roster-builder`** awaiting merge. Closes #28. PR #35 already merged this day.
-**Active branch:** `feature/roster-builder` (pushed; don't start new work until merged)
+**Current state:** Phase 5 targeting-visibility polish shipped (PR #39, closes #21). PR #37 (roster builder, #28) and PR #35 (victory conditions) merged earlier this day. Issue #38 filed for pre-deploy v17 rules-accuracy audit (discovered StumpGun ammo types / Unstable Icon gaps mid-test).
+**Active branch:** `main` (clean — ready for next pickup)
 
 ## Phase status
 
@@ -16,10 +16,10 @@
 | 4 — Battle engine (initial) | ✅ | PR #26 — later replaced by v17 order state machine (PR #32) |
 | 4.5 — v17 data model | ✅ | PR #30 (issue #27) |
 | 4.5 — v17 order mechanics | ✅ | **PR #32 (issue #31)** — this session |
-| 5 — Polish | 🚧 | #22 ✅ (PR #35 merged), #21 Todo (visual polish — grid targeting visibility flagged on 2026-04-20), #36 Todo (objectives, replaces placeholder tiebreak) |
-| 5b — Army submission UI | 🚧 | **#28 on PR #37** — preset dropdown + custom slot builder with live validation, preset pre-fill, per-slot stats; in-room panel scroll-wrapped |
-| 6 — Deploy | ⬜ | #23–25 Todo |
-| 7 — Cult mechanics | ⬜ | #29 Todo |
+| 5 — Polish | 🚧 | #22 ✅ (PR #35), #21 ✅ (PR #39 — range diamonds + target rings during order_execute, immobile order hiding), #36 Todo (objectives, replaces placeholder tiebreak) |
+| 5b — Army submission UI | ✅ | PR #37 merged (#28) — preset dropdown + custom slot builder with live validation, preset pre-fill, per-slot stats |
+| 6 — Deploy | ⬜ | #23–25 Todo. **Gates:** #38 (rules-accuracy audit) + #40 (simultaneous return fire + retreat) should precede deploy |
+| 7 — Cult mechanics | ⬜ | #29 Todo. #38's ammo-type plumbing will generalize into Grand Bombard (p.42) |
 
 ## Architecture quick-ref
 
@@ -124,10 +124,7 @@ Per-process logs land in `test-logs/` (gitignored). Ctrl+C tears everything down
 
 ## Next pickup
 
-Merge PR #37 first. Then, with #28 shipped:
-
-- **#21** — Phase 5 visual polish (grid targeting visibility flagged as friction on 2026-04-20, commented on issue). Most-obvious UX improvement for comfortable play-testing.
-- **#36** — v17 objectives (replaces the placeholder max-rounds tiebreak with real scoring). Self-contained mini-phase, rules-accuracy work.
-- **Phase 6** — export presets + deploy (#23–25).
-
-No dependencies between #21, #36, and Phase 6 — pick whichever fits the session.
+- **#36** — v17 objectives (replaces placeholder max-rounds tiebreak with real scoring). Self-contained, natural rules-accuracy warmup before #38.
+- **#38** — full v17 rules-accuracy audit (StumpGun ammo types, Unstable Icon, Preliminary Bombardment, per-unit specials). Gate before deploy. See `memory/rules_accuracy_gaps.md` for seed list.
+- **Phase 6** — export presets + deploy (#23–25). Do #38 first.
+- Remaining #21 scope (sprites, particles, tooltips, camera pan/zoom, placement-undo) — deferred; PR #39 only shipped the three items flagged in the issue comment.

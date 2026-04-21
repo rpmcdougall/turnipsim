@@ -44,9 +44,16 @@ func _draw() -> void:
 		draw_string(font, Vector2(4, battle_ref.DEPLOY_2_Y_MAX * cs + cs * 0.8), "P2 Deploy", HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, Color(1, 0.6, 0.6, 0.6))
 		draw_string(font, Vector2(4, battle_ref.DEPLOY_1_Y_MIN * cs + cs * 0.8), "P1 Deploy", HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, Color(0.6, 0.6, 1.0, 0.6))
 
-	# Command-range overlay: Manhattan diamond around the Made-Ready Snob.
-	# Matches the engine's |dx| + |dy| <= range check used by declare_order.
 	var state = battle_ref.current_game_state
+
+	# Objective markers. Drawn before command/reach overlays so they show
+	# through tints, but before unit sprites (handled in battle.gd's
+	# units_container) so units on adjacent cells still read clearly.
+	if state:
+		for obj in state.objectives:
+			_draw_objective_marker(obj, cs)
+
+	# Command-range overlay: Manhattan diamond around the Made-Ready Snob.
 	if state and state.order_phase == "order_declare" and state.current_snob_id != "":
 		var snob = battle_ref._get_unit_by_id(state.current_snob_id)
 		if snob and snob.x >= 0 and snob.y >= 0:
@@ -57,6 +64,33 @@ func _draw() -> void:
 	# acting unit. Client-side hint only — server remains authoritative.
 	if state and state.order_phase == "order_execute":
 		_draw_order_execute_overlay(state, cs, bw, bh)
+
+
+## Draw an objective marker: filled circle in the cell's center, colored by
+## the controlling seat (neutral grey when uncaptured), with a darker outline
+## for contrast against both board and highlight overlays.
+func _draw_objective_marker(obj, cs: float) -> void:
+	var fill: Color
+	var outline: Color
+	match obj.captured_by:
+		1:
+			fill = Color(0.35, 0.6, 1.0, 0.95)
+			outline = Color(0.15, 0.3, 0.6, 1.0)
+		2:
+			fill = Color(1.0, 0.4, 0.4, 0.95)
+			outline = Color(0.6, 0.15, 0.15, 1.0)
+		_:
+			fill = Color(0.85, 0.85, 0.85, 0.9)
+			outline = Color(0.3, 0.3, 0.3, 1.0)
+
+	var center = Vector2((obj.x + 0.5) * cs, (obj.y + 0.5) * cs)
+	var radius = cs * 0.38
+	draw_circle(center, radius, fill)
+	draw_arc(center, radius, 0.0, TAU, 32, outline, 2.0, true)
+
+	# Center dot emphasizes captured state without leaning on text rendering.
+	if obj.captured_by != 0:
+		draw_circle(center, radius * 0.35, outline)
 
 
 ## Fill every cell whose Manhattan distance from (cx, cy) is ≤ range with a

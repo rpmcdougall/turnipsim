@@ -130,6 +130,9 @@ static func confirm_placement(state: Types.GameState) -> Types.EngineResult:
 		new_state.phase = "orders"
 		new_state.order_phase = "snob_select"
 		new_state.active_seat = new_state.initiative_seat
+		# v17 p.22: "Objectives with units deployed within 1" are considered
+		# captured." Run the resolver once deployment is final.
+		_resolve_objective_captures(new_state)
 		new_state.action_log.append({
 			"round": state.current_round,
 			"action": "orders_phase_started"
@@ -752,6 +755,9 @@ static func _execute_charge(state: Types.GameState, unit: Types.UnitState, param
 ## After an order is fully executed, advance the state machine.
 ## Marks units as ordered, switches players, transitions phases.
 static func _advance_after_order(state: Types.GameState) -> void:
+	# Re-resolve objective control after any positional or unit-death change.
+	_resolve_objective_captures(state)
+
 	# Mark the ordered unit
 	var unit = _find_unit_in(state, state.current_order_unit_id)
 	if unit:
@@ -951,29 +957,23 @@ static func check_victory(state: Types.GameState) -> Dictionary:
 	if snobs_alive_2 == 0 and snobs_alive_1 > 0:
 		return {"winner": 1, "reason": "Player 2 lost all Snobs (Headless Chicken)"}
 
-	# Time limit reached: placeholder tiebreak by surviving units, then by
-	# model count. v17's real rule is objective-based scoring (see #36) —
-	# replace this branch once objectives / scenarios are implemented.
-	# TODO(objectives): see https://github.com/rpmcdougall/turnipsim/issues/36
+	# Round limit reached: v17 objective scoring (core p.22, scenarios p.23+).
+	# "The player who controls the most objective markers at the end of the
+	# final round is the victor." Ties go straight to draw — no secondary
+	# model-count fallback in the rules.
 	if state.current_round > state.max_rounds:
-		if units_alive_1 > units_alive_2:
-			return {"winner": 1, "reason": "Time expired — Player 1 holds the field"}
-		if units_alive_2 > units_alive_1:
-			return {"winner": 2, "reason": "Time expired — Player 2 holds the field"}
-		var models_alive_1: int = 0
-		var models_alive_2: int = 0
-		for unit in state.units:
-			if unit.is_dead:
-				continue
-			if unit.owner_seat == 1:
-				models_alive_1 += unit.model_count
-			else:
-				models_alive_2 += unit.model_count
-		if models_alive_1 > models_alive_2:
-			return {"winner": 1, "reason": "Time expired — Player 1 has more models standing"}
-		if models_alive_2 > models_alive_1:
-			return {"winner": 2, "reason": "Time expired — Player 2 has more models standing"}
-		return {"winner": 0, "reason": "Time expired — the field is contested (Draw)"}
+		var objectives_1: int = 0
+		var objectives_2: int = 0
+		for obj in state.objectives:
+			if obj.captured_by == 1:
+				objectives_1 += 1
+			elif obj.captured_by == 2:
+				objectives_2 += 1
+		if objectives_1 > objectives_2:
+			return {"winner": 1, "reason": "Player 1 controls %d objective(s) to %d" % [objectives_1, objectives_2]}
+		if objectives_2 > objectives_1:
+			return {"winner": 2, "reason": "Player 2 controls %d objective(s) to %d" % [objectives_2, objectives_1]}
+		return {"winner": 0, "reason": "Objectives tied %d–%d (Draw)" % [objectives_1, objectives_2]}
 
 	return {"winner": 0, "reason": ""}
 
@@ -1086,7 +1086,60 @@ static func _validate_move(state: Types.GameState, unit: Types.UnitState, x: int
 	for u in state.units:
 		if not u.is_dead and u.x == x and u.y == y and u.id != unit.id:
 			return "Position occupied"
+	# v17 core p.22: "A unit may move across objectives, but may never finish
+	# a move on top of one."
+	if _is_objective_at(state, x, y):
+		return "Cannot end move on an objective marker"
 	return ""
+
+
+## Is there an objective marker at this cell?
+static func _is_objective_at(state: Types.GameState, x: int, y: int) -> bool:
+	for obj in state.objectives:
+		if obj.x == x and obj.y == y:
+			return true
+	return false
+
+
+## Recompute capture state for every objective per v17 core p.22.
+## Called after any state change that could shift Follower positions
+## (placement finalized, moves, charges, unit deaths). Mutates in place.
+##
+## Rules modeled:
+##   - Only Follower units capture (Snobs never do).
+##   - "Within 1"" maps to Manhattan distance == 1 (orthogonal neighbor).
+##   - Objective cell itself is uncapturable-from; units can't end there.
+##   - If only one seat has adjacent Followers → captured by that seat.
+##   - If both seats have adjacent Followers → contested (uncaptured).
+##   - If neither seat has adjacent Followers → retain previous control.
+##
+## MVP simplification: the v17 "only one objective captured per move"
+## player-choice rule is not enforced here — a move that ends adjacent to
+## two uncontrolled objectives will capture both. Tracked for a follow-up
+## when objective placement is dense enough to matter in practice.
+static func _resolve_objective_captures(state: Types.GameState) -> void:
+	for obj in state.objectives:
+		var seat1_adjacent := 0
+		var seat2_adjacent := 0
+		for u in state.units:
+			if u.is_dead or u.is_snob():
+				continue
+			if u.x < 0 or u.y < 0:
+				continue
+			var d: int = abs(u.x - obj.x) + abs(u.y - obj.y)
+			if d == 1:
+				if u.owner_seat == 1:
+					seat1_adjacent += 1
+				else:
+					seat2_adjacent += 1
+		if seat1_adjacent > 0 and seat2_adjacent > 0:
+			obj.captured_by = 0
+		elif seat1_adjacent > 0:
+			obj.captured_by = 1
+		elif seat2_adjacent > 0:
+			obj.captured_by = 2
+		# else: retain obj.captured_by (captured objective stays captured
+		# until enemy contests or claims it).
 
 
 ## Find the best adjacent cell to a target for a charging unit.
@@ -1106,6 +1159,9 @@ static func _find_adjacent_cell(state: Types.GameState, charger: Types.UnitState
 				occupied = true
 				break
 		if occupied:
+			continue
+		# Objective cells are invalid end-of-move destinations (v17 p.22).
+		if _is_objective_at(state, cx, cy):
 			continue
 		var dist = abs(cx - charger.x) + abs(cy - charger.y)
 		if dist < best_dist:

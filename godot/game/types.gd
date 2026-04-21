@@ -347,6 +347,33 @@ class UnitState extends RefCounted:
 		return 0
 
 
+## Scenario objective marker. Placed before deployment, immobile for the
+## game, captured/uncaptured by Follower units per v17 core rules p.22.
+## captured_by: 0 = uncaptured, 1 or 2 = seat that controls it.
+class Objective extends RefCounted:
+	var id: String = ""
+	var x: int = 0
+	var y: int = 0
+	var captured_by: int = 0
+
+	func _init(p_id: String = "", p_x: int = 0, p_y: int = 0, p_captured_by: int = 0) -> void:
+		id = p_id
+		x = p_x
+		y = p_y
+		captured_by = p_captured_by
+
+	func to_dict() -> Dictionary:
+		return {"id": id, "x": x, "y": y, "captured_by": captured_by}
+
+	static func from_dict(data: Dictionary) -> Objective:
+		return Objective.new(
+			data.get("id", ""),
+			data.get("x", 0),
+			data.get("y", 0),
+			data.get("captured_by", 0)
+		)
+
+
 ## Game state for a battle in progress.
 class GameState extends RefCounted:
 	var room_code: String = ""
@@ -356,6 +383,7 @@ class GameState extends RefCounted:
 	var active_seat: int = 1
 	var initiative_seat: int = 1    # Player with initiative (set once, stays)
 	var units: Array[UnitState] = []
+	var objectives: Array[Objective] = []
 	var action_log: Array[Dictionary] = []
 	var winner_seat: int = 0
 
@@ -393,6 +421,10 @@ class GameState extends RefCounted:
 		for unit in units:
 			units_array.append(unit.to_dict())
 
+		var objectives_array: Array = []
+		for obj in objectives:
+			objectives_array.append(obj.to_dict())
+
 		return {
 			"room_code": room_code,
 			"phase": phase,
@@ -401,6 +433,7 @@ class GameState extends RefCounted:
 			"active_seat": active_seat,
 			"initiative_seat": initiative_seat,
 			"units": units_array,
+			"objectives": objectives_array,
 			"action_log": action_log,
 			"winner_seat": winner_seat,
 			"order_phase": order_phase,
@@ -438,6 +471,12 @@ class GameState extends RefCounted:
 		gs.current_order_type = data.get("current_order_type", "")
 		gs.current_order_blundered = data.get("current_order_blundered", false)
 		gs.current_order_move_bonus = data.get("current_order_move_bonus", 0)
+
+		if data.has("objectives"):
+			var objs: Array[Objective] = []
+			for obj_data in data["objectives"]:
+				objs.append(Objective.from_dict(obj_data))
+			gs.objectives = objs
 		return gs
 
 
