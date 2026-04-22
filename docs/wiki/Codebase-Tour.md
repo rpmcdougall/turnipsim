@@ -208,10 +208,9 @@ Each class has:
 - Ruleset loading, army rolling, determinism
 - Run with: `godot --headless -s tests/test_runner.gd`
 
-**test_game_engine.gd** (~577 lines, 38 tests)
+**test_game_engine.gd** (~1300 lines, 89 tests, all passing)
 - Phase 4 engine tests
-- Placement, movement, shooting, melee, turns, victory
-- 28/34 currently passing
+- Placement, movement, shooting, melee bouts, panic, retreat, turns, victory, objectives
 - Run with: `godot --headless -s tests/test_game_engine.gd`
 
 **test_ui_instantiate.gd** (~50 lines)
