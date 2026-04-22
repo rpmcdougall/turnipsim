@@ -297,6 +297,7 @@ func request_action(action_data: Dictionary) -> void:
 			if state.current_order_type == "charge" and not params.get("fizzle", false):
 				params["panic_die"] = _roll_d6()
 				params["fearless_die"] = _roll_d6()
+				params["retreat_die"] = _roll_d6()
 			var dice = _roll_execute_dice(state, params)
 			result = GameEngine.execute_order(state, params, dice)
 
