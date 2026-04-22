@@ -72,7 +72,7 @@ Each round, players alternate picking Snobs to "Make Ready." The sidebar is phas
 - Sidebar shows the declared order, blundered state, and movement range with dice bonus applied.
 - **Volley Fire:** click an enemy unit to fire (`-1 Inaccuracy` unless blundered).
 - **March:** click a destination cell within `M + move_bonus`.
-- **Charge:** click an enemy within `M + move_bonus`; attacker auto-pathfinds to an adjacent cell and resolves melee.
+- **Charge:** click an enemy within `M + move_bonus`; attacker auto-pathfinds to an adjacent cell and resolves melee as bouts (v17 p.18) — attacker strikes, defender removes casualties, defender counter-strikes, winner = more unsaved wounds per bout. Tied bouts repeat up to 3×; cap-hit ties draw with no retreat. Post-melee both survivors gain +1 panic; the loser retreats (which can include the charger).
 - **Move & Shoot:** click a destination (max `M`, or `1D6` if blundered), then click an enemy to fire from the new position *or* press **Confirm move (no shot)** to skip the shot.
 
 On success the turn either passes to the opposing seat (if they still have unordered Snobs), or — once both sides' Snobs are done — transitions to `follower_self_order`.
@@ -127,6 +127,7 @@ The fastest way to force each path without an hour-long game:
 | Order button enable state | Disabled for invalid orders (volley_fire with no range, etc.) | Button stays enabled → server rejects the action |
 | Blunder panic | `+1 panic` in unit info when order blundered | Panic not applied |
 | Charge panic test | Target with panic tokens may fail (D6+tokens ≥ 7). Failed = +1 panic token, target retreats away from charger (2" per token), melee skipped. Fearless (Brutes, Fodder 8+) get 3+ override. 0-token targets auto-pass. Board edge retreat = destroyed. | Panic test not logged, target doesn't move on failed test, melee always resolves |
+| Melee bouts | Target passes panic → bout loop runs: attacker strikes, defender removes dead, defender counter-strikes (if alive), attacker removes dead. Winner = more unsaved wounds that bout; tied bouts repeat up to 3 before draw. Both survivors +1 panic after the melee; loser retreats (charger can end up retreating instead of holding the cell). | Only one side rolls, no counter-attack, melee always ends after one pass, charger always holds the cell regardless of outcome |
 | Move & Shoot two-click | Destination staged → Confirm button appears | Confirm never appears, or first click executes immediately |
 | Round advance | `has_ordered` clears on all units, powder smoke gone | Units stay marked ordered across rounds |
 

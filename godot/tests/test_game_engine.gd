@@ -22,6 +22,7 @@ func _init() -> void:
 	_test_execute_charge()
 	_test_panic_test()
 	_test_retreat()
+	_test_melee_bouts()
 	_test_advance_flow()
 	_test_victory_conditions()
 	_test_objectives()
@@ -733,12 +734,19 @@ func _test_panic_test() -> void:
 		state = GameEngine.declare_order(state, state.units[0].id, "charge", 3, [3, 3]).new_state
 
 		var params = {"target_id": state.units[1].id, "panic_die": 5, "fearless_die": 3}
-		# Toff A=2, 1 model → 2 attacks → 4 dice needed (2 inac + 2 vuln)
-		var result = GameEngine.execute_order(state, params, [5, 5, 1, 1])
+		# Bout 1: attacker Toff (A=2, 1 model) strikes first with 4 dice
+		# [5,5,1,1] → 2 hits, 0 saves, 2 unsaved → Brutes lose 1 model (6→5).
+		# Defender counter-strikes: Brutes A=2 × 5 models = 10 attacks = 20 dice.
+		# [1,1,...] all misses → 0 wounds. Atk=2, def=0 → charger wins bout 1.
+		# Panic post-melee: +1 for both. Brutes had 4 → 5 (test asserts final).
+		var dice = [5, 5, 1, 1]
+		for i in range(20):
+			dice.append(1)
+		var result = GameEngine.execute_order(state, params, dice)
 
 		return (result.success
 			and result.new_state.units[0].x == 14  # charger moved
-			and result.new_state.units[1].panic_tokens == 4  # no extra panic (passed)
+			and result.new_state.units[1].panic_tokens == 5  # +1 post-melee
 			and result.new_state.units[1].model_count < 6)  # melee happened, took casualties
 	)
 
@@ -824,6 +832,151 @@ func _test_retreat() -> void:
 		var result = GameEngine._execute_retreat(state, state.units[2].id)
 		return (result["retreated"]
 			and state.units[2].x != 22 or state.units[2].y != 15)  # didn't land on blocker
+	)
+
+
+func _test_melee_bouts() -> void:
+	print("\n[Test Suite: Melee Bouts]")
+
+	# --- Direct _resolve_melee unit tests ---
+
+	_test("melee: attacker kills defender in bout 1, no counter-attack", func():
+		var atk = _mock_unit("atk", 1, "Toff", "snob", 6, 2, 5, 2, 5, 6, 1)
+		var def = _mock_unit("def", 2, "Toff", "snob", 6, 2, 5, 2, 5, 6, 1)
+		# Attacker 2 attacks × 2 dice = 4 dice. [5,5,1,1] → 2 hits, 2 unsaved → defender dies.
+		var combat = GameEngine._resolve_melee(atk, def, [5, 5, 1, 1])
+		return (combat["error"] == ""
+			and combat["bouts"].size() == 1
+			and combat["winner_id"] == "atk"
+			and combat["loser_id"] == "def"
+			and not combat["draw"]
+			and combat["dice_used"] == 4
+			and def.is_dead
+			and not atk.is_dead)
+	)
+
+	_test("melee: defender counter-attack kills attacker in bout 1", func():
+		var atk = _mock_unit("atk", 1, "Toff", "snob", 6, 2, 5, 2, 5, 6, 1)
+		var def = _mock_unit("def", 2, "Toff", "snob", 6, 2, 5, 2, 5, 6, 1)
+		# Attacker [1,1,1,1] → 0 hits. Defender [5,5,1,1] → 2 unsaved → attacker dies.
+		var combat = GameEngine._resolve_melee(atk, def, [1, 1, 1, 1, 5, 5, 1, 1])
+		return (combat["error"] == ""
+			and combat["bouts"].size() == 1
+			and combat["winner_id"] == "def"
+			and combat["loser_id"] == "atk"
+			and atk.is_dead
+			and not def.is_dead)
+	)
+
+	_test("melee: tied bout 1 proceeds to bout 2, decisive there", func():
+		var atk = _mock_unit("atk", 1, "Toff", "snob", 6, 2, 5, 2, 5, 6, 1)
+		var def = _mock_unit("def", 2, "Toff", "snob", 6, 2, 5, 2, 5, 6, 1)
+		# Bout 1: both whiff (0-0 tie). Bout 2: attacker kills.
+		var dice = [1, 1, 1, 1,   1, 1, 1, 1,   5, 5, 1, 1]
+		var combat = GameEngine._resolve_melee(atk, def, dice)
+		return (combat["error"] == ""
+			and combat["bouts"].size() == 2
+			and combat["winner_id"] == "atk"
+			and combat["loser_id"] == "def"
+			and not combat["draw"]
+			and def.is_dead)
+	)
+
+	_test("melee: bout cap reached with ties ends in draw, no winner", func():
+		var atk = _mock_unit("atk", 1, "Toff", "snob", 6, 2, 5, 2, 5, 6, 1)
+		var def = _mock_unit("def", 2, "Toff", "snob", 6, 2, 5, 2, 5, 6, 1)
+		# 3 bouts × 2 sides × 4 dice = 24 dice, all whiffs → ties every bout.
+		var dice: Array = []
+		for i in range(24):
+			dice.append(1)
+		var combat = GameEngine._resolve_melee(atk, def, dice)
+		return (combat["error"] == ""
+			and combat["bouts"].size() == GameEngine.MELEE_MAX_BOUTS
+			and combat["draw"]
+			and combat["winner_id"] == ""
+			and combat["loser_id"] == ""
+			and not atk.is_dead
+			and not def.is_dead)
+	)
+
+	_test("melee: rejects if one side already dead", func():
+		var atk = _mock_unit("atk", 1, "Toff", "snob", 6, 2, 5, 2, 5, 6, 1)
+		var def = _mock_unit("def", 2, "Toff", "snob", 6, 2, 5, 2, 5, 6, 1)
+		def.is_dead = true
+		var combat = GameEngine._resolve_melee(atk, def, [])
+		return combat["error"] != ""
+	)
+
+	_test("melee: errors when dice pool too small", func():
+		var atk = _mock_unit("atk", 1, "Toff", "snob", 6, 2, 5, 2, 5, 6, 1)
+		var def = _mock_unit("def", 2, "Toff", "snob", 6, 2, 5, 2, 5, 6, 1)
+		# Attacker needs 4 dice, give it 2.
+		var combat = GameEngine._resolve_melee(atk, def, [5, 5])
+		return combat["error"] != "" and "Not enough dice" in combat["error"]
+	)
+
+	# --- Integration via charge path ---
+
+	_test("charge: both participants gain +1 panic after melee ends", func():
+		var state = _mock_orders_state()
+		state.units[0].x = 10; state.units[0].y = 10
+		state.units[1].x = 11; state.units[1].y = 10  # adjacent
+		state.units[0].panic_tokens = 0
+		state.units[1].panic_tokens = 0
+		# Give defender multiple models so melee doesn't end via death.
+		# Replace u1 with 6-model Brutes-like unit (use Toff stats for simplicity).
+		state.units[1].model_count = 6
+		state = GameEngine.select_snob(state, state.units[0].id).new_state
+		state = GameEngine.declare_order(state, state.units[0].id, "charge", 3, [1, 1]).new_state
+
+		# Attacker bout 1: [5,5,1,1] → 2 unsaved → 1 model killed (6→5). Defender counters
+		# with 5×2=10 attacks = 20 dice, all whiff → 0 wounds. Atk=2, def=0 → atk wins bout 1.
+		var dice = [5, 5, 1, 1]
+		for i in range(20):
+			dice.append(1)
+		# Target panic_die=6 + 0 tokens → auto-passes (skipped).
+		var params = {"target_id": state.units[1].id, "panic_die": 6, "fearless_die": 1}
+		var result = GameEngine.execute_order(state, params, dice)
+
+		return (result.success
+			and result.new_state.units[0].panic_tokens == 1  # attacker +1 post-melee
+			and result.new_state.units[1].panic_tokens == 1  # defender +1 post-melee
+			and not result.new_state.units[0].is_dead
+			and result.new_state.units[1].model_count == 5)
+	)
+
+	_test("charge: charger loses bout → charger retreats, defender holds", func():
+		var state = _mock_orders_state()
+		state.units[0].x = 10; state.units[0].y = 10
+		state.units[1].x = 11; state.units[1].y = 10
+		state.units[0].panic_tokens = 0
+		state.units[1].panic_tokens = 0
+		# Boost charger wounds so it survives the bout and can retreat.
+		state.units[0].base_stats.wounds = 5
+		state = GameEngine.select_snob(state, state.units[0].id).new_state
+		state = GameEngine.declare_order(state, state.units[0].id, "charge", 3, [1, 1]).new_state
+
+		# Charger strikes first with [1,1,1,1] → 0 wounds. Defender counters [5,5,1,1]
+		# → 2 unsaved → charger current_wounds=2 (W=5, still alive). Def wins bout 1.
+		# Charger is the loser → charger retreats.
+		var dice = [1, 1, 1, 1, 5, 5, 1, 1]
+		var params = {"target_id": state.units[1].id, "panic_die": 6, "fearless_die": 1}
+		var result = GameEngine.execute_order(state, params, dice)
+
+		# Charger moved adjacent to (x=10, y=10 → x=10 target at 11), charge_dest x=10 wait...
+		# _find_adjacent_cell picks nearest adjacent cell to target. Target at (11,10), charger
+		# approaching from (10,10) → adjacent cell (10,10) itself is distance 1 from target. Fine.
+		# After losing: charger retreats 2×(panic_tokens_after_melee=1) = 2 cells away from defender.
+		# Defender at (11,10), charger now at charge_dest.x. Retreat direction = -x.
+		# So final charger x < charge_dest.x.
+		var charger = result.new_state.units[0]
+		return (result.success
+			and not charger.is_dead
+			and charger.panic_tokens == 1  # +1 post-melee
+			and charger.x < 11  # retreated away from defender
+			and not result.new_state.units[1].is_dead
+			and result.new_state.units[1].x == 11  # defender held
+			and result.new_state.units[1].y == 10)
 	)
 
 
