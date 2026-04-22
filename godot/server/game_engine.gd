@@ -511,15 +511,23 @@ static func _execute_volley_fire(state: Types.GameState, unit: Types.UnitState, 
 
 	# Volley Fire gives -1 Inaccuracy bonus (unless blundered)
 	var inaccuracy_mod = -1 if not state.current_order_blundered else 0
+	var retreat_die: int = params.get("retreat_die", 1)
 
 	var new_state = _clone_state(state)
 	var new_unit = _find_unit_in(new_state, unit.id)
 	var new_target = _find_unit_in(new_state, target_id)
 
-	var combat = _resolve_shooting(new_unit, new_target, dice_results, inaccuracy_mod)
+	var combat = _resolve_shooting_engagement(new_unit, new_target, dice_results, inaccuracy_mod)
 	if combat["error"] != "":
 		result.error = combat["error"]
 		return result
+
+	# Loser retreats (v17 core p.15). Tie → no retreat.
+	var retreat: Dictionary = {}
+	if not combat["tie"] and combat["loser_id"] != "":
+		var loser = _find_unit_in(new_state, combat["loser_id"])
+		if loser and not loser.is_dead:
+			retreat = _execute_retreat(new_state, combat["loser_id"], retreat_die)
 
 	_advance_after_order(new_state)
 
@@ -532,19 +540,45 @@ static func _execute_volley_fire(state: Types.GameState, unit: Types.UnitState, 
 		"target_id": target_id,
 		"target_type": target.unit_type,
 		"blundered": state.current_order_blundered,
-		"hits": combat["hits"],
-		"saves": combat["saves"],
-		"unsaved_wounds": combat["unsaved_wounds"]
+		"hits": combat["att_hits"],
+		"saves": combat["att_saves"],
+		"unsaved_wounds": combat["att_wounds"],
+		"return_fire": combat["return_fire_fired"],
+		"return_hits": combat["def_hits"],
+		"return_saves": combat["def_saves"],
+		"return_wounds": combat["def_wounds"],
+		"engagement_winner_id": combat["winner_id"],
+		"engagement_loser_id": combat["loser_id"],
+		"engagement_tie": combat["tie"],
+		"retreat": retreat,
 	})
 
 	result.success = true
 	result.new_state = new_state
 	result.dice_rolled = dice_results
 	var blunder_text = " (blundered, no bonus)" if state.current_order_blundered else " (-1 Inaccuracy)"
-	result.description = "Volley Fire! %s → %s%s (%d hits, %d saved, %d wounds)%s" % [
+	var return_text = ""
+	if combat["return_fire_fired"]:
+		return_text = " | return fire %d hits, %d wounds" % [combat["def_hits"], combat["def_wounds"]]
+	var outcome = ""
+	if combat["tie"]:
+		outcome = " — tied"
+	elif combat["winner_id"] == new_unit.id:
+		outcome = " — shooter wins"
+		if new_target.is_dead:
+			outcome += " [TARGET DESTROYED]"
+		elif retreat.get("destroyed", false):
+			outcome += " — target fled off board [DESTROYED]"
+	else:
+		outcome = " — target wins"
+		if new_unit.is_dead:
+			outcome += " [SHOOTER DESTROYED]"
+		elif retreat.get("destroyed", false):
+			outcome += " — shooter fled off board [DESTROYED]"
+	result.description = "Volley Fire! %s → %s%s (%d hits, %d wounds)%s%s" % [
 		unit.unit_type, target.unit_type, blunder_text,
-		combat["hits"], combat["saves"], combat["unsaved_wounds"],
-		" [DESTROYED]" if new_target.is_dead else ""
+		combat["att_hits"], combat["att_wounds"],
+		return_text, outcome,
 	]
 
 	return result
@@ -579,8 +613,19 @@ static func _execute_move_and_shoot(state: Types.GameState, unit: Types.UnitStat
 	new_unit.x = x
 	new_unit.y = y
 
-	# Shoot target (if provided and able)
-	var combat = {"hits": 0, "saves": 0, "unsaved_wounds": 0, "error": ""}
+	# Shoot target (if provided and able). Return-fire eligibility uses the
+	# shooter's post-move position.
+	var retreat_die: int = params.get("retreat_die", 1)
+	var combat: Dictionary = {
+		"att_hits": 0, "att_saves": 0, "att_wounds": 0,
+		"def_hits": 0, "def_saves": 0, "def_wounds": 0,
+		"return_fire_fired": false,
+		"winner_id": "", "loser_id": "",
+		"tie": false,
+		"error": "",
+	}
+	var retreat: Dictionary = {}
+	var fired: bool = false
 	var new_target: Types.UnitState = null
 	if target_id != "":
 		new_target = _find_unit_in(new_state, target_id)
@@ -588,7 +633,15 @@ static func _execute_move_and_shoot(state: Types.GameState, unit: Types.UnitStat
 			# Check range from new position
 			var shoot_dist = _grid_distance(x, y, new_target.x, new_target.y)
 			if shoot_dist <= new_unit.base_stats.weapon_range and not new_unit.has_powder_smoke:
-				combat = _resolve_shooting(new_unit, new_target, dice_results, 0)
+				combat = _resolve_shooting_engagement(new_unit, new_target, dice_results, 0)
+				if combat["error"] != "":
+					result.error = combat["error"]
+					return result
+				fired = true
+				if not combat["tie"] and combat["loser_id"] != "":
+					var loser = _find_unit_in(new_state, combat["loser_id"])
+					if loser and not loser.is_dead:
+						retreat = _execute_retreat(new_state, combat["loser_id"], retreat_die)
 
 	_advance_after_order(new_state)
 
@@ -602,18 +655,29 @@ static func _execute_move_and_shoot(state: Types.GameState, unit: Types.UnitStat
 		"to_x": x, "to_y": y,
 		"target_id": target_id,
 		"blundered": state.current_order_blundered,
-		"hits": combat["hits"],
-		"unsaved_wounds": combat["unsaved_wounds"]
+		"fired": fired,
+		"hits": combat["att_hits"],
+		"unsaved_wounds": combat["att_wounds"],
+		"return_fire": combat["return_fire_fired"],
+		"return_hits": combat["def_hits"],
+		"return_wounds": combat["def_wounds"],
+		"engagement_winner_id": combat["winner_id"],
+		"engagement_loser_id": combat["loser_id"],
+		"engagement_tie": combat["tie"],
+		"retreat": retreat,
 	})
 
 	result.success = true
 	result.new_state = new_state
 	result.dice_rolled = dice_results
 	var shoot_text = ""
-	if target_id != "" and combat["hits"] > 0:
+	if fired:
 		shoot_text = " → shot %s (%d hits, %d wounds)" % [
-			new_target.unit_type if new_target else "?", combat["hits"], combat["unsaved_wounds"]
+			new_target.unit_type if new_target else "?",
+			combat["att_hits"], combat["att_wounds"]
 		]
+		if combat["return_fire_fired"]:
+			shoot_text += ", return fire %d wounds" % combat["def_wounds"]
 	result.description = "Move & Shoot! %s to (%d,%d)%s" % [unit.unit_type, x, y, shoot_text]
 
 	return result
@@ -1165,13 +1229,16 @@ static func _is_valid_retreat_dest(state: Types.GameState, unit: Types.UnitState
 # COMBAT RESOLUTION HELPERS
 # =============================================================================
 
-## Resolve a shooting engagement. Modifies new_attacker and new_target in place.
-## Returns { hits, saves, unsaved_wounds, error }
-static func _resolve_shooting(attacker: Types.UnitState, target: Types.UnitState, dice_results: Array, inaccuracy_mod: int) -> Dictionary:
+## Resolve one side's shooting attacks. Consumes dice from the pool starting
+## at `offset`. Does NOT mutate either unit — caller applies wounds, smoke,
+## and panic tokens after both sides have rolled. Returns
+## { hits, saves, unsaved_wounds, dice_used, error }.
+static func _resolve_shooting_side(attacker: Types.UnitState, target: Types.UnitState, dice_results: Array, offset: int, inaccuracy_mod: int) -> Dictionary:
 	var num_attacks = attacker.model_count
 	var needed_dice = num_attacks * 2
-	if dice_results.size() < needed_dice:
-		return {"hits": 0, "saves": 0, "unsaved_wounds": 0, "error": "Not enough dice (need %d, got %d)" % [needed_dice, dice_results.size()]}
+	if dice_results.size() - offset < needed_dice:
+		return {"hits": 0, "saves": 0, "unsaved_wounds": 0, "dice_used": 0,
+				"error": "Not enough dice (need %d at offset %d, have %d)" % [needed_dice, offset, dice_results.size() - offset]}
 
 	var inaccuracy = maxi(attacker.base_stats.inaccuracy + inaccuracy_mod, 2)
 	var vulnerability = target.base_stats.vulnerability
@@ -1185,8 +1252,8 @@ static func _resolve_shooting(attacker: Types.UnitState, target: Types.UnitState
 	var unsaved_wounds = 0
 
 	for i in range(num_attacks):
-		var inac_roll = dice_results[i]
-		var vuln_roll = dice_results[num_attacks + i]
+		var inac_roll = dice_results[offset + i]
+		var vuln_roll = dice_results[offset + num_attacks + i]
 		if inac_roll >= inaccuracy:
 			hits += 1
 			if vuln_roll >= vulnerability:
@@ -1194,18 +1261,112 @@ static func _resolve_shooting(attacker: Types.UnitState, target: Types.UnitState
 			else:
 				unsaved_wounds += 1
 
-	# Apply wounds
-	_apply_wounds(target, unsaved_wounds)
+	return {"hits": hits, "saves": saves, "unsaved_wounds": unsaved_wounds,
+			"dice_used": needed_dice, "error": ""}
 
-	# Any hit gives target a panic token
-	if hits > 0:
+
+## Is the target eligible to return fire at the shooter? v17 core p.13:
+## target must have a ranged weapon, no powder smoke, and the shooter must
+## be within the target's weapon range. Casualties from the primary strike
+## do NOT suppress return fire (resolved from pre-engagement state).
+static func _can_return_fire(target: Types.UnitState, shooter: Types.UnitState) -> bool:
+	if target.is_dead or shooter.is_dead:
+		return false
+	if target.base_stats.weapon_range <= 0:
+		return false
+	if target.has_powder_smoke:
+		return false
+	var dist := _grid_distance(target.x, target.y, shooter.x, shooter.y)
+	return dist <= target.base_stats.weapon_range
+
+
+## Resolve a shooting engagement (v17 core p.13). Both sides roll against
+## pre-engagement model counts — casualties from the primary strike do not
+## suppress return fire. Wounds, smoke, and hit-panic tokens applied after
+## both sides have rolled.
+##
+## Winner = side that dealt more unsaved wounds. Tie = no winner, no retreat
+## (caller still runs _execute_retreat only when winner/loser set).
+##
+## Returns {
+##   att_hits, att_saves, att_wounds,
+##   def_hits, def_saves, def_wounds,
+##   return_fire_fired: bool,
+##   winner_id, loser_id,           # "" on tie
+##   tie: bool,
+##   dice_used: int,
+##   error: String
+## }
+static func _resolve_shooting_engagement(attacker: Types.UnitState, target: Types.UnitState, dice_results: Array, attacker_inaccuracy_mod: int) -> Dictionary:
+	var result = {
+		"att_hits": 0, "att_saves": 0, "att_wounds": 0,
+		"def_hits": 0, "def_saves": 0, "def_wounds": 0,
+		"return_fire_fired": false,
+		"winner_id": "", "loser_id": "",
+		"tie": false,
+		"dice_used": 0,
+		"error": "",
+	}
+
+	if attacker.is_dead or target.is_dead:
+		result["error"] = "Cannot resolve shooting: one side already dead"
+		return result
+
+	# Attacker rolls first (dice pool laid out attacker-then-defender).
+	var att = _resolve_shooting_side(attacker, target, dice_results, 0, attacker_inaccuracy_mod)
+	if att["error"] != "":
+		result["error"] = att["error"]
+		return result
+	result["att_hits"] = att["hits"]
+	result["att_saves"] = att["saves"]
+	result["att_wounds"] = att["unsaved_wounds"]
+
+	var offset: int = att["dice_used"]
+
+	# Return fire eligibility checked from pre-engagement state.
+	var can_return = _can_return_fire(target, attacker)
+	if can_return:
+		# Defender return fire — inaccuracy_mod=0 (no volley-fire bonus on return).
+		var defn = _resolve_shooting_side(target, attacker, dice_results, offset, 0)
+		if defn["error"] != "":
+			result["error"] = defn["error"]
+			return result
+		result["def_hits"] = defn["hits"]
+		result["def_saves"] = defn["saves"]
+		result["def_wounds"] = defn["unsaved_wounds"]
+		result["return_fire_fired"] = true
+		offset += defn["dice_used"]
+
+	result["dice_used"] = offset
+
+	# Apply wounds simultaneously (casualties don't suppress return fire).
+	_apply_wounds(target, result["att_wounds"])
+	if result["return_fire_fired"]:
+		_apply_wounds(attacker, result["def_wounds"])
+
+	# Panic tokens from taking hits (any hits, saved or not).
+	if result["att_hits"] > 0 and not target.is_dead:
 		target.panic_tokens = mini(target.panic_tokens + 1, 6)
+	if result["def_hits"] > 0 and not attacker.is_dead:
+		attacker.panic_tokens = mini(attacker.panic_tokens + 1, 6)
 
-	# Black powder gives powder smoke
+	# Powder smoke: whichever side fired with black_powder gets a smoke token.
 	if attacker.equipment == "black_powder":
 		attacker.has_powder_smoke = true
+	if result["return_fire_fired"] and target.equipment == "black_powder":
+		target.has_powder_smoke = true
 
-	return {"hits": hits, "saves": saves, "unsaved_wounds": unsaved_wounds, "error": ""}
+	# Winner / loser / tie — decided by total unsaved wounds dealt.
+	if result["att_wounds"] > result["def_wounds"]:
+		result["winner_id"] = attacker.id
+		result["loser_id"] = target.id
+	elif result["def_wounds"] > result["att_wounds"]:
+		result["winner_id"] = target.id
+		result["loser_id"] = attacker.id
+	else:
+		result["tie"] = true
+
+	return result
 
 
 ## Resolve one side's attacks in a melee bout. Consumes dice from the pool
