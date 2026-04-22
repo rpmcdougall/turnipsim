@@ -297,7 +297,7 @@ func request_action(action_data: Dictionary) -> void:
 			if state.current_order_type == "charge" and not params.get("fizzle", false):
 				params["panic_die"] = _roll_d6()
 				params["fearless_die"] = _roll_d6()
-			var dice = _roll_execute_dice(state)
+			var dice = _roll_execute_dice(state, params)
 			result = GameEngine.execute_order(state, params, dice)
 
 		_:
@@ -353,9 +353,9 @@ func _roll_d6() -> int:
 
 
 ## Helper: Roll the combat dice pool an execute_order requires, sized to the
-## ordered unit and the declared order type. Rolls extras when the target
-## isn't yet known (move_and_shoot may or may not fire after moving).
-func _roll_execute_dice(state: Types.GameState) -> Array:
+## ordered unit and the declared order type. Charge sizing accounts for the
+## full melee: both sides strike per bout, up to GameEngine.MELEE_MAX_BOUTS.
+func _roll_execute_dice(state: Types.GameState, params: Dictionary) -> Array:
 	var unit = _find_unit(state, state.current_order_unit_id)
 	if unit == null:
 		return []
@@ -367,7 +367,15 @@ func _roll_execute_dice(state: Types.GameState) -> Array:
 		"move_and_shoot":
 			num_dice = unit.model_count * 2
 		"charge":
-			num_dice = unit.model_count * unit.base_stats.attacks * 2
+			# Worst case: attacker + defender each strike every bout. Target
+			# may be unknown at roll time (fizzle path) — fall back to a
+			# symmetric pool sized to the attacker.
+			var atk_per_bout = unit.model_count * unit.base_stats.attacks * 2
+			var def_per_bout = atk_per_bout
+			var target = _find_unit(state, params.get("target_id", ""))
+			if target != null:
+				def_per_bout = target.model_count * target.base_stats.attacks * 2
+			num_dice = (atk_per_bout + def_per_bout) * GameEngine.MELEE_MAX_BOUTS
 		"march":
 			num_dice = 0
 

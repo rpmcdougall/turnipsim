@@ -33,6 +33,11 @@ const DEPLOYMENT_ZONE_1_Y_MAX: int = 31
 const DEPLOYMENT_ZONE_2_Y_MIN: int = 0   # Top (seat 2)
 const DEPLOYMENT_ZONE_2_Y_MAX: int = 3
 
+# Melee bout cap — v17 has no hard limit, but tied bouts could loop forever on
+# whiffing dice. Cap at 3; unresolved ties after the cap end in a draw with no
+# retreat (both sides still take +1 panic per melee-ended rule).
+const MELEE_MAX_BOUTS: int = 3
+
 
 # =============================================================================
 # PLACEMENT PHASE
@@ -773,17 +778,40 @@ static func _execute_charge(state: Types.GameState, unit: Types.UnitState, param
 	new_unit.x = charge_dest.x
 	new_unit.y = charge_dest.y
 
-	# Resolve melee
+	# Resolve melee as bouts (v17 core p.18)
 	var combat = _resolve_melee(new_unit, new_target, dice_results)
 	if combat["error"] != "":
 		result.error = combat["error"]
 		return result
+
+	# Post-melee: both participants gain +1 panic token (v17 p.18 + p.19).
+	if not new_unit.is_dead:
+		new_unit.panic_tokens = mini(new_unit.panic_tokens + 1, 6)
+	if not new_target.is_dead:
+		new_target.panic_tokens = mini(new_target.panic_tokens + 1, 6)
+
+	# Loser retreats. Draw (bout cap with no winner) = no retreat.
+	var retreat: Dictionary = {}
+	var charger_retreated: bool = false
+	if not combat["draw"] and combat["loser_id"] != "":
+		var loser = _find_unit_in(new_state, combat["loser_id"])
+		if loser and not loser.is_dead:
+			retreat = _execute_retreat(new_state, combat["loser_id"])
+			if combat["loser_id"] == new_unit.id:
+				charger_retreated = true
 
 	_advance_after_order(new_state)
 
 	var panic_log = {}
 	if not panic["auto_passed"]:
 		panic_log = panic
+
+	# Aggregate wounds across bouts for legacy log fields.
+	var atk_wounds_total: int = 0
+	var def_wounds_total: int = 0
+	for b in combat["bouts"]:
+		atk_wounds_total += b["atk_wounds"]
+		def_wounds_total += b["def_wounds"]
 
 	new_state.action_log.append({
 		"round": state.current_round,
@@ -797,9 +825,14 @@ static func _execute_charge(state: Types.GameState, unit: Types.UnitState, param
 		"blundered": state.current_order_blundered,
 		"panic_test": panic_log,
 		"target_fled": false,
-		"hits": combat["hits"],
-		"saves": combat["saves"],
-		"unsaved_wounds": combat["unsaved_wounds"]
+		"bouts": combat["bouts"],
+		"melee_draw": combat["draw"],
+		"melee_winner_id": combat["winner_id"],
+		"melee_loser_id": combat["loser_id"],
+		"retreat": retreat,
+		"charger_retreated": charger_retreated,
+		"unsaved_wounds": atk_wounds_total,
+		"counter_unsaved_wounds": def_wounds_total,
 	})
 
 	result.success = true
@@ -810,10 +843,28 @@ static func _execute_charge(state: Types.GameState, unit: Types.UnitState, param
 		panic_text = " (target Fearless — held!)"
 	elif not panic["auto_passed"]:
 		panic_text = " (target passed panic test)"
-	result.description = "Charge! %s → %s%s (%d hits, %d saved, %d wounds)%s" % [
-		unit.unit_type, target.unit_type, panic_text,
-		combat["hits"], combat["saves"], combat["unsaved_wounds"],
-		" [DESTROYED]" if new_target.is_dead else ""
+
+	var outcome_text: String
+	if combat["draw"]:
+		outcome_text = "drawn after %d bouts" % combat["bouts"].size()
+	elif combat["winner_id"] == new_unit.id:
+		outcome_text = "charger won in %d bout(s)" % combat["bouts"].size()
+		if new_target.is_dead:
+			outcome_text += " [DEFENDER DESTROYED]"
+		elif retreat.get("destroyed", false):
+			outcome_text += " — defender fled off board [DESTROYED]"
+		elif retreat.get("stubborn_held", false):
+			outcome_text += " — defender Stubborn, held ground"
+	else:
+		outcome_text = "charger lost in %d bout(s)" % combat["bouts"].size()
+		if new_unit.is_dead:
+			outcome_text += " [CHARGER DESTROYED]"
+		elif retreat.get("destroyed", false):
+			outcome_text += " — charger fled off board [DESTROYED]"
+
+	result.description = "Charge! %s → %s%s — %s (atk %d / def %d wounds)" % [
+		unit.unit_type, target.unit_type, panic_text, outcome_text,
+		atk_wounds_total, def_wounds_total,
 	]
 
 	return result
@@ -1150,28 +1201,31 @@ static func _resolve_shooting(attacker: Types.UnitState, target: Types.UnitState
 	return {"hits": hits, "saves": saves, "unsaved_wounds": unsaved_wounds, "error": ""}
 
 
-## Resolve a melee engagement. Modifies new_attacker and new_target in place.
-static func _resolve_melee(attacker: Types.UnitState, target: Types.UnitState, dice_results: Array) -> Dictionary:
+## Resolve one side's attacks in a melee bout. Consumes dice from the pool
+## starting at `offset`. Returns { hits, saves, unsaved_wounds, dice_used, error }.
+## Mutates `defender` via _apply_wounds.
+static func _resolve_bout_side(attacker: Types.UnitState, defender: Types.UnitState, dice_results: Array, offset: int) -> Dictionary:
 	var attacks_per_model = attacker.base_stats.attacks
 	var inaccuracy = attacker.base_stats.inaccuracy
-	var vulnerability = target.base_stats.vulnerability
+	var vulnerability = defender.base_stats.vulnerability
 
-	# Close combat equipment reduces inaccuracy by 1
+	# Close combat equipment reduces inaccuracy by 1 (min 2)
 	if attacker.equipment == "close_combat":
 		inaccuracy = maxi(inaccuracy - 1, 2)
 
 	var num_attacks = attacker.model_count * attacks_per_model
 	var needed_dice = num_attacks * 2
-	if dice_results.size() < needed_dice:
-		return {"hits": 0, "saves": 0, "unsaved_wounds": 0, "error": "Not enough dice (need %d, got %d)" % [needed_dice, dice_results.size()]}
+	if dice_results.size() - offset < needed_dice:
+		return {"hits": 0, "saves": 0, "unsaved_wounds": 0, "dice_used": 0,
+				"error": "Not enough dice (need %d at offset %d, have %d)" % [needed_dice, offset, dice_results.size() - offset]}
 
 	var hits = 0
 	var saves = 0
 	var unsaved_wounds = 0
 
 	for i in range(num_attacks):
-		var inac_roll = dice_results[i]
-		var vuln_roll = dice_results[num_attacks + i]
+		var inac_roll = dice_results[offset + i]
+		var vuln_roll = dice_results[offset + num_attacks + i]
 		if inac_roll >= inaccuracy:
 			hits += 1
 			if vuln_roll >= vulnerability:
@@ -1179,9 +1233,112 @@ static func _resolve_melee(attacker: Types.UnitState, target: Types.UnitState, d
 			else:
 				unsaved_wounds += 1
 
-	_apply_wounds(target, unsaved_wounds)
+	_apply_wounds(defender, unsaved_wounds)
 
-	return {"hits": hits, "saves": saves, "unsaved_wounds": unsaved_wounds, "error": ""}
+	return {"hits": hits, "saves": saves, "unsaved_wounds": unsaved_wounds,
+			"dice_used": needed_dice, "error": ""}
+
+
+## Worst-case dice pool size for a full melee between two units.
+## Attacker strikes + defender counter-strikes, each at 2 dice per attack,
+## across up to MELEE_MAX_BOUTS. Callers should supply at least this many.
+static func _melee_dice_budget(attacker: Types.UnitState, defender: Types.UnitState) -> int:
+	var per_bout = (attacker.model_count * attacker.base_stats.attacks * 2) \
+		+ (defender.model_count * defender.base_stats.attacks * 2)
+	return per_bout * MELEE_MAX_BOUTS
+
+
+## Resolve a melee engagement as bouts (v17 core p.18). Mutates both units
+## in place via wound application. Does NOT apply post-melee panic tokens or
+## trigger retreat — caller handles those so it can integrate with state.
+##
+## Each bout: attacker strikes → defender removes casualties → if defender
+## still alive, defender counter-strikes → attacker removes casualties.
+## Winner = side that dealt more unsaved wounds that bout. Tie → next bout.
+## Hard cap at MELEE_MAX_BOUTS; if still tied at the cap, draw (no retreat).
+##
+## Returns {
+##   bouts: [{atk_hits, atk_saves, atk_wounds, def_hits, def_saves, def_wounds}...],
+##   winner_id, loser_id,  # "" on draw or if one side was already dead
+##   draw: bool,           # true only when cap hit with no winner
+##   dice_used: int,
+##   error: String
+## }
+static func _resolve_melee(attacker: Types.UnitState, target: Types.UnitState, dice_results: Array) -> Dictionary:
+	var summary = {
+		"bouts": [],
+		"winner_id": "",
+		"loser_id": "",
+		"draw": false,
+		"dice_used": 0,
+		"error": "",
+	}
+
+	if attacker.is_dead or target.is_dead:
+		summary["error"] = "Cannot resolve melee: one side already dead"
+		return summary
+
+	var offset: int = 0
+
+	for bout_idx in range(MELEE_MAX_BOUTS):
+		var bout = {
+			"atk_hits": 0, "atk_saves": 0, "atk_wounds": 0,
+			"def_hits": 0, "def_saves": 0, "def_wounds": 0,
+		}
+
+		# Attacker strikes first
+		var atk = _resolve_bout_side(attacker, target, dice_results, offset)
+		if atk["error"] != "":
+			summary["error"] = atk["error"]
+			return summary
+		offset += atk["dice_used"]
+		bout["atk_hits"] = atk["hits"]
+		bout["atk_saves"] = atk["saves"]
+		bout["atk_wounds"] = atk["unsaved_wounds"]
+
+		# Target wiped out before counter-attack
+		if target.is_dead:
+			summary["bouts"].append(bout)
+			summary["winner_id"] = attacker.id
+			summary["loser_id"] = target.id
+			summary["dice_used"] = offset
+			return summary
+
+		# Defender counter-strikes
+		var def = _resolve_bout_side(target, attacker, dice_results, offset)
+		if def["error"] != "":
+			summary["error"] = def["error"]
+			return summary
+		offset += def["dice_used"]
+		bout["def_hits"] = def["hits"]
+		bout["def_saves"] = def["saves"]
+		bout["def_wounds"] = def["unsaved_wounds"]
+		summary["bouts"].append(bout)
+
+		# Attacker wiped out — defender wins the bout trivially
+		if attacker.is_dead:
+			summary["winner_id"] = target.id
+			summary["loser_id"] = attacker.id
+			summary["dice_used"] = offset
+			return summary
+
+		# Both alive — decide the bout
+		if bout["atk_wounds"] > bout["def_wounds"]:
+			summary["winner_id"] = attacker.id
+			summary["loser_id"] = target.id
+			summary["dice_used"] = offset
+			return summary
+		if bout["def_wounds"] > bout["atk_wounds"]:
+			summary["winner_id"] = target.id
+			summary["loser_id"] = attacker.id
+			summary["dice_used"] = offset
+			return summary
+		# Tie → next bout
+
+	# Cap reached with no decisive bout — draw.
+	summary["draw"] = true
+	summary["dice_used"] = offset
+	return summary
 
 
 # =============================================================================
