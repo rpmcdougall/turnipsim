@@ -689,18 +689,17 @@ func _test_panic_test() -> void:
 		state = GameEngine.select_snob(state, state.units[0].id).new_state
 		state = GameEngine.declare_order(state, state.units[0].id, "charge", 3, [3, 3]).new_state
 
-		var params = {"target_id": state.units[1].id, "panic_die": 4, "fearless_die": 1}
+		var params = {"target_id": state.units[1].id, "panic_die": 4, "fearless_die": 1, "retreat_die": 2}
 		var result = GameEngine.execute_order(state, params, [5, 5, 1, 1])
 
-		# After +1 panic token, target has 5 tokens → retreat 10 cells (2×5).
-		# Target was at (15,10), nearest enemy (charger) at (10,10).
-		# Retreat direction: away from charger → positive X.
-		# Ideal destination: (25, 10).
+		# After +1 panic token, target has 5 tokens. Retreat distance = D6 + 2×5 =
+		# 2 + 10 = 12. Target was at (15,10), charger at (10,10), retreat +X.
+		# Ideal destination: (27, 10).
 		return (result.success
 			and result.new_state.units[0].x == 14  # charger moved adjacent
 			and not result.new_state.units[1].is_dead  # no melee happened
 			and result.new_state.units[1].panic_tokens == 5  # +1 from failed test
-			and result.new_state.units[1].x == 25  # retreated 10 cells right
+			and result.new_state.units[1].x == 27  # retreated 12 cells right
 			and result.new_state.units[1].y == 10
 			and result.new_state.units[1].current_wounds == 0)
 	)
@@ -754,51 +753,53 @@ func _test_panic_test() -> void:
 func _test_retreat() -> void:
 	print("\n[Test Suite: Retreat]")
 
-	_test("retreat: moves away from nearest enemy by 2x panic tokens", func():
+	_test("retreat: distance is D6 + 2 per panic token", func():
 		var state = _mock_orders_state()
 		# Unit at (20,15), enemy at (15,15). Retreat direction: +X.
-		# 3 tokens → distance 6.
+		# retreat_die=3, 3 tokens → distance = 3 + 6 = 9 → x = 29.
 		state.units[2].x = 20; state.units[2].y = 15
 		state.units[2].panic_tokens = 3
 		state.units[1].x = 15; state.units[1].y = 15  # nearest enemy
-		var result = GameEngine._execute_retreat(state, state.units[2].id)
+		var result = GameEngine._execute_retreat(state, state.units[2].id, 3)
 		return (result["retreated"]
-			and state.units[2].x == 26  # 20 + 6
+			and result["distance"] == 9
+			and state.units[2].x == 29
 			and state.units[2].y == 15)
 	)
 
 	_test("retreat: diagonal direction works correctly", func():
 		var state = _mock_orders_state()
 		# Unit at (20,20), enemy at (17,17). Direction: +X,+Y (normalized).
-		# 2 tokens → distance 4. Diagonal: 4/√2 ≈ 2.83 each axis → (23,23).
+		# retreat_die=1, 2 tokens → distance 5. Diagonal: 5/√2 ≈ 3.54 → (24,24).
 		state.units[2].x = 20; state.units[2].y = 20
 		state.units[2].panic_tokens = 2
 		state.units[1].x = 17; state.units[1].y = 17
-		var result = GameEngine._execute_retreat(state, state.units[2].id)
+		var result = GameEngine._execute_retreat(state, state.units[2].id, 1)
 		return (result["retreated"]
-			and state.units[2].x == 23  # round(20 + 4*0.707) = round(22.83) = 23
-			and state.units[2].y == 23)
+			and state.units[2].x == 24
+			and state.units[2].y == 24)
 	)
 
-	_test("retreat: min distance is 1 even with 0 panic tokens", func():
+	_test("retreat: D6 alone carries the unit with 0 panic tokens", func():
 		var state = _mock_orders_state()
+		# retreat_die=4, 0 tokens → distance 4, x = 24.
 		state.units[2].x = 20; state.units[2].y = 15
-		state.units[2].panic_tokens = 0  # min(0*2, 1) = 1
+		state.units[2].panic_tokens = 0
 		state.units[1].x = 15; state.units[1].y = 15
-		var result = GameEngine._execute_retreat(state, state.units[2].id)
+		var result = GameEngine._execute_retreat(state, state.units[2].id, 4)
 		return (result["retreated"]
-			and result["distance"] == 1
-			and state.units[2].x == 21)
+			and result["distance"] == 4
+			and state.units[2].x == 24)
 	)
 
 	_test("retreat: board edge destroys unit", func():
 		var state = _mock_orders_state()
 		# Unit at (46,15), enemy at (44,15). Retreat direction: +X.
-		# 3 tokens → distance 6. Ideal dest: (52,15) → off board → destroyed.
+		# retreat_die=1, 3 tokens → distance 7. Ideal: (53,15) → off board → destroyed.
 		state.units[2].x = 46; state.units[2].y = 15
 		state.units[2].panic_tokens = 3
 		state.units[1].x = 44; state.units[1].y = 15
-		var result = GameEngine._execute_retreat(state, state.units[2].id)
+		var result = GameEngine._execute_retreat(state, state.units[2].id, 1)
 		return (result["retreated"]
 			and result["destroyed"]
 			and state.units[2].is_dead
@@ -814,7 +815,7 @@ func _test_retreat() -> void:
 		stump.panic_tokens = 4
 		state.units.append(stump)
 		state.units[1].x = 15; state.units[1].y = 15
-		var result = GameEngine._execute_retreat(state, "stump")
+		var result = GameEngine._execute_retreat(state, "stump", 6)
 		return (result["stubborn_held"]
 			and not result["retreated"]
 			and stump.x == 20 and stump.y == 15)
@@ -823,15 +824,26 @@ func _test_retreat() -> void:
 	_test("retreat: avoids occupied cells", func():
 		var state = _mock_orders_state()
 		# Unit at (20,15), enemy at (18,15). Retreat direction: +X.
-		# 1 token → distance 2. Ideal dest: (22,15).
-		# Place a blocker at (22,15).
+		# retreat_die=1, 1 token → distance 3. Ideal dest: (23,15). Blocker there.
 		state.units[2].x = 20; state.units[2].y = 15
 		state.units[2].panic_tokens = 1
 		state.units[1].x = 18; state.units[1].y = 15
-		state.units[3].x = 22; state.units[3].y = 15  # blocker at ideal dest
-		var result = GameEngine._execute_retreat(state, state.units[2].id)
+		state.units[3].x = 23; state.units[3].y = 15  # blocker at ideal dest
+		var result = GameEngine._execute_retreat(state, state.units[2].id, 1)
 		return (result["retreated"]
-			and state.units[2].x != 22 or state.units[2].y != 15)  # didn't land on blocker
+			and (state.units[2].x != 23 or state.units[2].y != 15))
+	)
+
+	_test("retreat: retreat_die carries even with 0 panic tokens and high roll", func():
+		var state = _mock_orders_state()
+		# retreat_die=6, 0 tokens → distance 6.
+		state.units[2].x = 20; state.units[2].y = 15
+		state.units[2].panic_tokens = 0
+		state.units[1].x = 15; state.units[1].y = 15
+		var result = GameEngine._execute_retreat(state, state.units[2].id, 6)
+		return (result["retreated"]
+			and result["distance"] == 6
+			and state.units[2].x == 26)
 	)
 
 

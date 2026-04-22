@@ -726,6 +726,7 @@ static func _execute_charge(state: Types.GameState, unit: Types.UnitState, param
 	# v17 core p.16: target takes panic test when charged.
 	var panic_die: int = params.get("panic_die", 1)
 	var fearless_die: int = params.get("fearless_die", 1)
+	var retreat_die: int = params.get("retreat_die", 1)
 	var panic = _panic_test(new_target, panic_die, fearless_die)
 
 	if not panic["passed"]:
@@ -733,7 +734,7 @@ static func _execute_charge(state: Types.GameState, unit: Types.UnitState, param
 		# then retreats away from nearest enemy. Charger moves to the
 		# now-vacated adjacent cell. No melee.
 		new_target.panic_tokens = mini(new_target.panic_tokens + 1, 6)
-		var retreat = _execute_retreat(new_state, target_id)
+		var retreat = _execute_retreat(new_state, target_id, retreat_die)
 
 		# Charger advances to adjacent cell (target may have vacated it,
 		# or stayed put if Stubborn Fanatics).
@@ -796,7 +797,7 @@ static func _execute_charge(state: Types.GameState, unit: Types.UnitState, param
 	if not combat["draw"] and combat["loser_id"] != "":
 		var loser = _find_unit_in(new_state, combat["loser_id"])
 		if loser and not loser.is_dead:
-			retreat = _execute_retreat(new_state, combat["loser_id"])
+			retreat = _execute_retreat(new_state, combat["loser_id"], retreat_die)
 			if combat["loser_id"] == new_unit.id:
 				charger_retreated = true
 
@@ -1015,13 +1016,16 @@ static func _panic_test(unit: Types.UnitState, panic_die: int, fearless_die: int
 # =============================================================================
 
 ## Execute retreat for a unit. Mutates state in place.
-## v17 core p.20: move directly away from closest enemy, 2" per panic token
-## (min 1"). Board edge = unit destroyed. Stubborn Fanatics never retreat.
+## v17 core p.20: move directly away from closest enemy, D6 + 2" per panic
+## token. Board edge = unit destroyed. Stubborn Fanatics never retreat.
+##
+## `retreat_die` is a pre-rolled D6 supplied by the caller (1..6). Pass 1 for
+## the minimum distance when a test intentionally suppresses the D6 component.
 ##
 ## Returns { retreated, destroyed, from_x, from_y, to_x, to_y, distance,
-##           stubborn_held }.
+##           retreat_die, stubborn_held, no_enemy }.
 ## DT tests for crossing Followers deferred to terrain system (#58).
-static func _execute_retreat(state: Types.GameState, unit_id: String) -> Dictionary:
+static func _execute_retreat(state: Types.GameState, unit_id: String, retreat_die: int) -> Dictionary:
 	var unit = _find_unit_in(state, unit_id)
 	var result = {
 		"retreated": false,
@@ -1029,7 +1033,9 @@ static func _execute_retreat(state: Types.GameState, unit_id: String) -> Diction
 		"from_x": unit.x, "from_y": unit.y,
 		"to_x": unit.x, "to_y": unit.y,
 		"distance": 0,
+		"retreat_die": retreat_die,
 		"stubborn_held": false,
+		"no_enemy": false,
 	}
 
 	if not unit or unit.is_dead:
@@ -1040,14 +1046,15 @@ static func _execute_retreat(state: Types.GameState, unit_id: String) -> Diction
 		result["stubborn_held"] = true
 		return result
 
-	# Retreat distance: 2" per panic token, minimum 1
-	var retreat_dist: int = maxi(unit.panic_tokens * 2, 1)
+	# Retreat distance: D6 + 2" per panic token (v17 core p.20).
+	var retreat_dist: int = retreat_die + unit.panic_tokens * 2
 	result["distance"] = retreat_dist
 
 	# Direction: away from nearest alive enemy
 	var nearest_enemy = _find_nearest_enemy(state, unit)
 	if not nearest_enemy:
 		# No enemies alive — nowhere to retreat from. Stay put.
+		result["no_enemy"] = true
 		return result
 
 	var dx: float = float(unit.x - nearest_enemy.x)
