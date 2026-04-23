@@ -23,6 +23,7 @@ func _init() -> void:
 	_test_panic_test()
 	_test_retreat()
 	_test_melee_bouts()
+	_test_shooting_engagements()
 	_test_advance_flow()
 	_test_victory_conditions()
 	_test_objectives()
@@ -294,8 +295,9 @@ func _test_execute_volley_fire() -> void:
 		state = GameEngine.declare_order(state, state.units[0].id, "volley_fire", 3, [3, 3]).new_state
 
 		# Toff I=5, -1 bonus → needs 4+. Target V=5, W=2.
-		# Die 4 hits (4>=4), die 1 fails save → 1 wound.
-		var result = GameEngine.execute_order(state, {"target_id": state.units[1].id}, [4, 1])
+		# Die 4 hits, die 1 fails save → 1 wound. Target returns fire with 2 dice,
+		# both whiff → 0 shooter wounds.
+		var result = GameEngine.execute_order(state, {"target_id": state.units[1].id}, [4, 1, 1, 1])
 
 		return result.success and result.new_state.units[1].current_wounds == 1
 	)
@@ -306,7 +308,8 @@ func _test_execute_volley_fire() -> void:
 		state = GameEngine.declare_order(state, state.units[0].id, "volley_fire", 3, [3, 3]).new_state
 
 		# Die 4 hits with -1 bonus (base I=5 would have missed). Die 6 saves V=5.
-		var result = GameEngine.execute_order(state, {"target_id": state.units[1].id}, [4, 6])
+		# Return fire: 2 dice of 1 → miss, no shooter wounds.
+		var result = GameEngine.execute_order(state, {"target_id": state.units[1].id}, [4, 6, 1, 1])
 
 		return result.success and result.new_state.units[1].current_wounds == 0  # saved
 	)
@@ -322,7 +325,8 @@ func _test_execute_volley_fire() -> void:
 		state = GameEngine.declare_order(state, state.units[2].id, "volley_fire", 1, [3, 3]).new_state
 
 		# Fodder I=6. Blundered: no -1, so needs 6+. Die 5 misses.
-		var result = GameEngine.execute_order(state, {"target_id": state.units[1].id}, [5, 1])
+		# Return fire from Toff u1: 2 dice → 1s miss.
+		var result = GameEngine.execute_order(state, {"target_id": state.units[1].id}, [5, 1, 1, 1])
 
 		return result.success and result.new_state.units[1].current_wounds == 0
 	)
@@ -333,7 +337,8 @@ func _test_execute_volley_fire() -> void:
 		state = GameEngine.select_snob(state, state.units[0].id).new_state
 		state = GameEngine.declare_order(state, state.units[0].id, "volley_fire", 3, [3, 3]).new_state
 
-		var result = GameEngine.execute_order(state, {"target_id": state.units[1].id}, [3, 1])
+		# Shooter miss (3 at I4+), return fire 2 dice of 1 → miss.
+		var result = GameEngine.execute_order(state, {"target_id": state.units[1].id}, [3, 1, 1, 1])
 
 		return result.success and result.new_state.units[0].has_powder_smoke
 	)
@@ -344,7 +349,8 @@ func _test_execute_volley_fire() -> void:
 		state = GameEngine.declare_order(state, state.units[0].id, "volley_fire", 3, [3, 3]).new_state
 
 		# Die 4 hits (I4+ with bonus), die 6 saves. Hit → panic token even if saved.
-		var result = GameEngine.execute_order(state, {"target_id": state.units[1].id}, [4, 6])
+		# Return fire: 2 dice of 1 → miss (no extra panic flow).
+		var result = GameEngine.execute_order(state, {"target_id": state.units[1].id}, [4, 6, 1, 1])
 
 		return result.success and result.new_state.units[1].panic_tokens == 1
 	)
@@ -398,7 +404,9 @@ func _test_execute_volley_fire() -> void:
 
 		# Fodder I=6, bonus -1 → 5+. All 4 hit, all 4 fail save → 4 wounds.
 		# Target is Toff W=2, model_count=1 → dies after 2 wounds.
-		var dice = [5, 5, 5, 5, 1, 1, 1, 1]
+		# Target had 1 model pre-engagement → returns fire with 2 dice (casualties
+		# don't suppress return fire per v17 p.13). Both miss.
+		var dice = [5, 5, 5, 5, 1, 1, 1, 1, 1, 1]
 		var result = GameEngine.execute_order(state, {"target_id": state.units[1].id}, dice)
 
 		return result.success and result.new_state.units[1].is_dead
@@ -415,8 +423,9 @@ func _test_execute_move_and_shoot() -> void:
 		state = GameEngine.declare_order(state, state.units[0].id, "move_and_shoot", 3, [3, 3]).new_state
 
 		# After move, distance 8 ≤ 18. Toff I=5, no bonus → 5+. Die 5 hits. Die 1 wounds.
+		# Return fire: 2 dice of 1 → miss.
 		var params = {"x": 12, "y": 15, "target_id": state.units[1].id}
-		var result = GameEngine.execute_order(state, params, [5, 1])
+		var result = GameEngine.execute_order(state, params, [5, 1, 1, 1])
 
 		return (result.success
 			and result.new_state.units[0].x == 12
@@ -989,6 +998,214 @@ func _test_melee_bouts() -> void:
 			and not result.new_state.units[1].is_dead
 			and result.new_state.units[1].x == 11  # defender held
 			and result.new_state.units[1].y == 10)
+	)
+
+
+func _test_shooting_engagements() -> void:
+	print("\n[Test Suite: Shooting Engagements]")
+
+	# --- Direct _resolve_shooting_engagement tests ---
+
+	_test("engagement: return fire fires when target in range with weapon", func():
+		var atk = _mock_unit("atk", 1, "Toff", "snob", 6, 2, 5, 2, 5, 18, 1)
+		var dfn = _mock_unit("dfn", 2, "Toff", "snob", 6, 2, 5, 2, 5, 18, 1)
+		atk.x = 10; atk.y = 10
+		dfn.x = 15; dfn.y = 10  # within 18
+		# Attacker [5,1] hits + wounds (I5+, V5). Defender [5,1] same.
+		var combat = GameEngine._resolve_shooting_engagement(atk, dfn, [5, 1, 5, 1], 0)
+		return (combat["error"] == ""
+			and combat["return_fire_fired"]
+			and combat["att_hits"] == 1 and combat["att_wounds"] == 1
+			and combat["def_hits"] == 1 and combat["def_wounds"] == 1
+			and combat["tie"]
+			and combat["winner_id"] == "" and combat["loser_id"] == "")
+	)
+
+	_test("engagement: powder smoke on target blocks return fire", func():
+		var atk = _mock_unit("atk", 1, "Toff", "snob", 6, 2, 5, 2, 5, 18, 1)
+		var dfn = _mock_unit("dfn", 2, "Toff", "snob", 6, 2, 5, 2, 5, 18, 1)
+		atk.x = 10; atk.y = 10
+		dfn.x = 15; dfn.y = 10
+		dfn.has_powder_smoke = true
+		var combat = GameEngine._resolve_shooting_engagement(atk, dfn, [5, 1], 0)
+		return (combat["error"] == ""
+			and not combat["return_fire_fired"]
+			and combat["att_wounds"] == 1
+			and combat["def_wounds"] == 0
+			and combat["winner_id"] == "atk"
+			and combat["loser_id"] == "dfn")
+	)
+
+	_test("engagement: target out of own range cannot return fire", func():
+		var atk = _mock_unit("atk", 1, "Toff", "snob", 6, 2, 5, 2, 5, 18, 1)
+		# Defender wr=4 but attacker 10 cells away → out of range for return.
+		var dfn = _mock_unit("dfn", 2, "Toff", "snob", 6, 2, 5, 2, 5, 4, 1)
+		atk.x = 10; atk.y = 10
+		dfn.x = 20; dfn.y = 10
+		atk.base_stats.weapon_range = 18
+		var combat = GameEngine._resolve_shooting_engagement(atk, dfn, [5, 1], 0)
+		return (combat["error"] == ""
+			and not combat["return_fire_fired"]
+			and combat["winner_id"] == "atk")
+	)
+
+	_test("engagement: melee-only target (wr=0) cannot return fire", func():
+		var atk = _mock_unit("atk", 1, "Toff", "snob", 6, 2, 5, 2, 5, 18, 1)
+		var dfn = _mock_unit("dfn", 2, "Brutes", "infantry", 6, 2, 5, 2, 5, 0, 1)
+		atk.x = 10; atk.y = 10
+		dfn.x = 12; dfn.y = 10
+		var combat = GameEngine._resolve_shooting_engagement(atk, dfn, [5, 1], 0)
+		return combat["error"] == "" and not combat["return_fire_fired"]
+	)
+
+	_test("engagement: casualties do not suppress return fire", func():
+		# Multi-model defender losing a model pre-return still returns fire with
+		# pre-engagement model count. Attacker 4 models vs Defender 3 models.
+		var atk = _mock_unit("atk", 1, "Atk", "infantry", 6, 1, 5, 1, 5, 18, 4)
+		var dfn = _mock_unit("dfn", 2, "Dfn", "infantry", 6, 1, 5, 1, 5, 18, 3)
+		atk.x = 10; atk.y = 10
+		dfn.x = 15; dfn.y = 10
+		# Attacker 4 shots × 2 dice = 8. All hit+wound → 4 unsaved → dfn has 1 model left.
+		# Defender return fire rolled from 3-model state = 6 dice — casualties
+		# should not reduce the pool.
+		var dice = [5, 5, 5, 5, 1, 1, 1, 1,   # attacker 4 hits, 4 wounds
+					5, 5, 5, 1, 1, 1]          # defender 3 hits (I5+), 3 wounds
+		var combat = GameEngine._resolve_shooting_engagement(atk, dfn, dice, 0)
+		return (combat["error"] == ""
+			and combat["return_fire_fired"]
+			and combat["att_hits"] == 4 and combat["att_wounds"] == 4
+			and combat["def_hits"] == 3 and combat["def_wounds"] == 3
+			and combat["dice_used"] == 14
+			# Dfn had 3 models, took 4 wounds → 3 models dead → is_dead.
+			and dfn.is_dead
+			# Atk 4 models W=1 took 3 wounds → 3 models dead, 1 survives.
+			and atk.model_count == 1)
+	)
+
+	_test("engagement: attacker wins and defender becomes loser", func():
+		var atk = _mock_unit("atk", 1, "Toff", "snob", 6, 2, 5, 2, 5, 18, 1)
+		var dfn = _mock_unit("dfn", 2, "Toff", "snob", 6, 2, 5, 2, 5, 18, 1)
+		atk.x = 10; atk.y = 10
+		dfn.x = 15; dfn.y = 10
+		var combat = GameEngine._resolve_shooting_engagement(atk, dfn, [5, 1, 1, 1], 0)
+		return (combat["error"] == ""
+			and combat["winner_id"] == "atk"
+			and combat["loser_id"] == "dfn"
+			and not combat["tie"])
+	)
+
+	_test("engagement: defender wins and attacker becomes loser", func():
+		var atk = _mock_unit("atk", 1, "Toff", "snob", 6, 2, 5, 2, 5, 18, 1)
+		var dfn = _mock_unit("dfn", 2, "Toff", "snob", 6, 2, 5, 2, 5, 18, 1)
+		atk.x = 10; atk.y = 10
+		dfn.x = 15; dfn.y = 10
+		var combat = GameEngine._resolve_shooting_engagement(atk, dfn, [1, 1, 5, 1], 0)
+		return (combat["error"] == ""
+			and combat["winner_id"] == "dfn"
+			and combat["loser_id"] == "atk"
+			and not combat["tie"])
+	)
+
+	_test("engagement: both whiff → no winner, no loser", func():
+		var atk = _mock_unit("atk", 1, "Toff", "snob", 6, 2, 5, 2, 5, 18, 1)
+		var dfn = _mock_unit("dfn", 2, "Toff", "snob", 6, 2, 5, 2, 5, 18, 1)
+		atk.x = 10; atk.y = 10
+		dfn.x = 15; dfn.y = 10
+		var combat = GameEngine._resolve_shooting_engagement(atk, dfn, [1, 1, 1, 1], 0)
+		return (combat["error"] == ""
+			and combat["tie"]
+			and combat["winner_id"] == "" and combat["loser_id"] == "")
+	)
+
+	_test("engagement: rejects when one side already dead", func():
+		var atk = _mock_unit("atk", 1, "Toff", "snob", 6, 2, 5, 2, 5, 18, 1)
+		var dfn = _mock_unit("dfn", 2, "Toff", "snob", 6, 2, 5, 2, 5, 18, 1)
+		dfn.is_dead = true
+		var combat = GameEngine._resolve_shooting_engagement(atk, dfn, [], 0)
+		return combat["error"] != ""
+	)
+
+	# --- volley_fire integration ---
+
+	_test("volley_fire: loser retreats after engagement", func():
+		var state = _mock_orders_state_ranged()
+		state.units[0].x = 10; state.units[0].y = 15
+		state.units[1].x = 20; state.units[1].y = 15
+		state = GameEngine.select_snob(state, state.units[0].id).new_state
+		state = GameEngine.declare_order(state, state.units[0].id, "volley_fire", 3, [3, 3]).new_state
+
+		# Attacker hits+wounds, defender whiffs → atk wins, dfn retreats.
+		var params = {"target_id": state.units[1].id, "retreat_die": 2}
+		var result = GameEngine.execute_order(state, params, [4, 1, 1, 1])
+
+		# Defender had 0 panic tokens, got hit → +1 panic. Retreat distance = 2 + 2*1 = 4.
+		# Defender at (20,15), attacker at (10,15), retreat +X → (24,15).
+		return (result.success
+			and result.new_state.units[1].panic_tokens == 1
+			and result.new_state.units[1].x == 24
+			and result.new_state.units[1].y == 15)
+	)
+
+	_test("volley_fire: tied engagement → no retreat", func():
+		var state = _mock_orders_state_ranged()
+		state.units[0].x = 10; state.units[0].y = 15
+		state.units[1].x = 20; state.units[1].y = 15
+		state = GameEngine.select_snob(state, state.units[0].id).new_state
+		state = GameEngine.declare_order(state, state.units[0].id, "volley_fire", 3, [3, 3]).new_state
+
+		# Both hit+wound (4 with -1 bonus hits for atk, 5 hits for dfn at I5). Tie 1-1.
+		var params = {"target_id": state.units[1].id, "retreat_die": 3}
+		var result = GameEngine.execute_order(state, params, [4, 1, 5, 1])
+
+		# Neither retreats; both still at original positions.
+		return (result.success
+			and result.new_state.units[0].x == 10 and result.new_state.units[0].y == 15
+			and result.new_state.units[1].x == 20 and result.new_state.units[1].y == 15
+			and result.new_state.units[0].current_wounds == 1
+			and result.new_state.units[1].current_wounds == 1)
+	)
+
+	_test("volley_fire: target killed outright still returned fire pre-death", func():
+		var state = _mock_orders_state_ranged()
+		# Give attacker enough shots to kill Toff target (W=2) in one engagement.
+		state.units[0].model_count = 2  # 2 shots per engagement
+		state.units[0].max_models = 2
+		state.units[0].x = 10; state.units[0].y = 15
+		state.units[1].x = 20; state.units[1].y = 15
+		state = GameEngine.select_snob(state, state.units[0].id).new_state
+		state = GameEngine.declare_order(state, state.units[0].id, "volley_fire", 3, [3, 3]).new_state
+
+		# Attacker 2 shots, both hit+wound → dfn W=2, dies. Defender pre-engagement
+		# count was 1 → returns fire with 2 dice.
+		var params = {"target_id": state.units[1].id, "retreat_die": 1}
+		var result = GameEngine.execute_order(state, params, [5, 5, 1, 1, 5, 1])
+
+		# Attacker took 1 wound from return fire; defender dead.
+		return (result.success
+			and result.new_state.units[1].is_dead
+			and result.new_state.units[0].current_wounds == 1)
+	)
+
+	# --- move_and_shoot integration ---
+
+	_test("move_and_shoot: return fire uses shooter's post-move position", func():
+		var state = _mock_orders_state_ranged()
+		state.units[0].x = 10; state.units[0].y = 15
+		state.units[0].base_stats.weapon_range = 18
+		state.units[1].x = 22; state.units[1].y = 15
+		state.units[1].base_stats.weapon_range = 10  # pre-move distance 12 > 10
+		state = GameEngine.select_snob(state, state.units[0].id).new_state
+		state = GameEngine.declare_order(state, state.units[0].id, "move_and_shoot", 3, [3, 3]).new_state
+
+		# Attacker moves to (14,15) → distance 8 ≤ 10 → defender can return fire.
+		var params = {"x": 14, "y": 15, "target_id": state.units[1].id, "retreat_die": 1}
+		var result = GameEngine.execute_order(state, params, [5, 1, 5, 1])
+
+		# Both hit+wound → tie, no retreat. Confirms return fire measured from (14,15).
+		return (result.success
+			and result.new_state.units[0].x == 14
+			and result.new_state.units[0].current_wounds == 1
+			and result.new_state.units[1].current_wounds == 1)
 	)
 
 

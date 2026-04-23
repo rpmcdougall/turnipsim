@@ -293,10 +293,13 @@ func request_action(action_data: Dictionary) -> void:
 
 		"execute_order":
 			var params = action_data.get("params", {})
-			# Charge: server rolls panic test + fearless dice for the target.
+			# Charge: server rolls panic test + fearless + retreat dice for the target.
 			if state.current_order_type == "charge" and not params.get("fizzle", false):
 				params["panic_die"] = _roll_d6()
 				params["fearless_die"] = _roll_d6()
+				params["retreat_die"] = _roll_d6()
+			# Shooting engagements can also trigger a retreat (v17 p.15).
+			if state.current_order_type in ["volley_fire", "move_and_shoot"]:
 				params["retreat_die"] = _roll_d6()
 			var dice = _roll_execute_dice(state, params)
 			result = GameEngine.execute_order(state, params, dice)
@@ -363,10 +366,15 @@ func _roll_execute_dice(state: Types.GameState, params: Dictionary) -> Array:
 
 	var num_dice = 0
 	match state.current_order_type:
-		"volley_fire":
-			num_dice = unit.model_count * 2
-		"move_and_shoot":
-			num_dice = unit.model_count * 2
+		"volley_fire", "move_and_shoot":
+			# Shooting engagement: both sides may fire. Target dice added when
+			# the target is known; otherwise over-roll with a symmetric pool.
+			var att_dice = unit.model_count * 2
+			var def_dice = att_dice
+			var s_target = _find_unit(state, params.get("target_id", ""))
+			if s_target != null:
+				def_dice = s_target.model_count * 2
+			num_dice = att_dice + def_dice
 		"charge":
 			# Worst case: attacker + defender each strike every bout. Target
 			# may be unknown at roll time (fizzle path) — fall back to a
