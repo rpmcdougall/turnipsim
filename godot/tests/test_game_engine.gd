@@ -24,6 +24,7 @@ func _init() -> void:
 	_test_retreat()
 	_test_melee_bouts()
 	_test_shooting_engagements()
+	_test_line_of_sight()
 	_test_advance_flow()
 	_test_victory_conditions()
 	_test_objectives()
@@ -385,6 +386,8 @@ func _test_execute_volley_fire() -> void:
 		# Place enemy diagonally: dx=12, dy=12. Euclidean = sqrt(288) ≈ 16.97 ≤ 18.
 		# Manhattan would be 24 > 18 → out of range. Proves Euclidean works.
 		state.units[1].x = 22; state.units[1].y = 27
+		# Remove other enemy so u1 is the closest (closest-target rule).
+		state.units[3].is_dead = true
 		state = GameEngine.select_snob(state, state.units[0].id).new_state
 		state = GameEngine.declare_order(state, state.units[0].id, "volley_fire", 3, [3, 3]).new_state
 
@@ -1206,6 +1209,150 @@ func _test_shooting_engagements() -> void:
 			and result.new_state.units[0].x == 14
 			and result.new_state.units[0].current_wounds == 1
 			and result.new_state.units[1].current_wounds == 1)
+	)
+
+
+func _test_line_of_sight() -> void:
+	print("\n[Test Suite: Line of Sight + Closest Target]")
+
+	_test("LoS: clear line between two units passes", func():
+		var state = _mock_orders_state()
+		state.units[0].x = 10; state.units[0].y = 15
+		state.units[1].x = 20; state.units[1].y = 15
+		# No blockers between them
+		state.units[2].x = 5; state.units[2].y = 5  # out of the way
+		state.units[3].x = 30; state.units[3].y = 5  # out of the way
+		return GameEngine._has_line_of_sight(state, 10, 15, 20, 15)
+	)
+
+	_test("LoS: Follower unit on the line blocks", func():
+		var state = _mock_orders_state()
+		state.units[0].x = 10; state.units[0].y = 15
+		state.units[1].x = 20; state.units[1].y = 15
+		# Place a Follower directly between them
+		state.units[2].x = 15; state.units[2].y = 15
+		return not GameEngine._has_line_of_sight(state, 10, 15, 20, 15)
+	)
+
+	_test("LoS: Snob on the line does NOT block", func():
+		var state = _mock_orders_state()
+		state.units[0].x = 10; state.units[0].y = 15
+		state.units[1].x = 20; state.units[1].y = 15
+		# Place the enemy Snob (u1) on the line — Snobs never block LoS.
+		# Create a separate target behind the Snob.
+		state.units[1].x = 15; state.units[1].y = 15  # Snob in the middle
+		state.units[3].x = 20; state.units[3].y = 15  # Follower as actual target
+		# LoS from u0 to u3 should pass — u1 (Snob) doesn't block.
+		state.units[2].x = 5; state.units[2].y = 5  # out of the way
+		return GameEngine._has_line_of_sight(state, 10, 15, 20, 15)
+	)
+
+	_test("LoS: dead unit on the line does NOT block", func():
+		var state = _mock_orders_state()
+		state.units[0].x = 10; state.units[0].y = 15
+		state.units[1].x = 20; state.units[1].y = 15
+		state.units[2].x = 15; state.units[2].y = 15  # Follower in the way
+		state.units[2].is_dead = true  # but dead
+		state.units[3].x = 30; state.units[3].y = 5
+		return GameEngine._has_line_of_sight(state, 10, 15, 20, 15)
+	)
+
+	_test("LoS: endpoints are excluded from blocker check", func():
+		var state = _mock_orders_state()
+		# Both shooter and target are Followers at endpoints — they shouldn't block themselves.
+		state.units[2].x = 10; state.units[2].y = 15
+		state.units[3].x = 20; state.units[3].y = 15
+		state.units[0].x = 5; state.units[0].y = 5
+		state.units[1].x = 30; state.units[1].y = 5
+		return GameEngine._has_line_of_sight(state, 10, 15, 20, 15)
+	)
+
+	_test("LoS: diagonal line blocked by unit on the path", func():
+		var state = _mock_orders_state()
+		state.units[0].x = 10; state.units[0].y = 10
+		state.units[1].x = 16; state.units[1].y = 16
+		# Place blocker at (13,13) — on the diagonal line
+		state.units[2].x = 13; state.units[2].y = 13
+		state.units[3].x = 30; state.units[3].y = 5
+		return not GameEngine._has_line_of_sight(state, 10, 10, 16, 16)
+	)
+
+	_test("closest-target: reject non-closest enemy", func():
+		var state = _mock_orders_state_ranged()
+		# u0 at (10,15), u1 (enemy Snob) at (20,15) dist=10.
+		# Place u3 (enemy Follower) closer at (14,17) dist≈4.5. Off-axis so no LoS block.
+		state.units[3].x = 14; state.units[3].y = 17
+		state = GameEngine.select_snob(state, state.units[0].id).new_state
+		state = GameEngine.declare_order(state, state.units[0].id, "volley_fire", 3, [3, 3]).new_state
+
+		# Try to target u1 (farther) instead of u3 (closer) — should be rejected.
+		var result = GameEngine.execute_order(state, {"target_id": state.units[1].id}, [6, 1])
+		return not result.success and "closest" in result.error
+	)
+
+	_test("closest-target: tied-closest both legal", func():
+		var state = _mock_orders_state_ranged()
+		# u0 at (10,15). Place both enemies equidistant, neither blocking LoS to the other.
+		state.units[1].x = 20; state.units[1].y = 15  # dist=10
+		state.units[3].x = 10; state.units[3].y = 25  # dist=10
+		state = GameEngine.select_snob(state, state.units[0].id).new_state
+		state = GameEngine.declare_order(state, state.units[0].id, "volley_fire", 3, [3, 3]).new_state
+
+		# Both should be valid — provide enough dice for engagement (atk + return fire)
+		var r1 = GameEngine.execute_order(state, {"target_id": state.units[1].id}, [6, 1, 1, 1])
+		# Reset state for second attempt
+		state = _mock_orders_state_ranged()
+		state.units[1].x = 20; state.units[1].y = 15
+		state.units[3].x = 10; state.units[3].y = 25
+		state = GameEngine.select_snob(state, state.units[0].id).new_state
+		state = GameEngine.declare_order(state, state.units[0].id, "volley_fire", 3, [3, 3]).new_state
+		var r2 = GameEngine.execute_order(state, {"target_id": state.units[3].id}, [6, 1, 1, 1])
+
+		return r1.success and r2.success
+	)
+
+	_test("closest-target: Sharpshooters bypass restriction", func():
+		var state = _mock_orders_state_ranged()
+		# Make u0 a Sharpshooter (Chaff)
+		state.units[0].special_rules = ["sharpshooters"] as Array[String]
+		# u3 closer and off-axis so it doesn't block LoS to u1.
+		state.units[3].x = 14; state.units[3].y = 17
+		state = GameEngine.select_snob(state, state.units[0].id).new_state
+		state = GameEngine.declare_order(state, state.units[0].id, "volley_fire", 3, [3, 3]).new_state
+
+		# Target u1 (farther) — should succeed for Sharpshooters. Enough dice for engagement.
+		var result = GameEngine.execute_order(state, {"target_id": state.units[1].id}, [6, 1, 1, 1])
+		return result.success
+	)
+
+	_test("volley_fire: LoS blocked = fizzle succeeds", func():
+		var state = _mock_orders_state_ranged()
+		# Place blocker between shooter and all enemies
+		state.units[2].x = 15; state.units[2].y = 15  # blocks LoS to u1 at (20,15)
+		state.units[3].x = 15; state.units[3].y = 16  # blocks LoS diagonally too
+		# Actually need to make sure NO enemy has LoS. u1 at (20,15) blocked by u2 at (15,15).
+		# u3 at (15,16) is a friendly unit, won't be targeted. Need to check u1 only.
+		# u1 is the only enemy in range. u2 blocks LoS to u1.
+		state.units[3].x = 40; state.units[3].y = 2  # move enemy far away and out of range
+		state = GameEngine.select_snob(state, state.units[0].id).new_state
+		state = GameEngine.declare_order(state, state.units[0].id, "volley_fire", 3, [3, 3]).new_state
+
+		var result = GameEngine.execute_order(state, {"fizzle": true}, [])
+		return result.success
+	)
+
+	_test("charge: LoS required to target", func():
+		var state = _mock_orders_state()
+		state.units[0].x = 10; state.units[0].y = 10
+		state.units[1].x = 20; state.units[1].y = 10
+		# Place Follower blocker between charger and target
+		state.units[2].x = 15; state.units[2].y = 10
+		state = GameEngine.select_snob(state, state.units[0].id).new_state
+		state = GameEngine.declare_order(state, state.units[0].id, "charge", 3, [6, 6]).new_state
+
+		var params = {"target_id": state.units[1].id, "panic_die": 1, "fearless_die": 1}
+		var result = GameEngine.execute_order(state, params, [5, 5, 1, 1])
+		return not result.success and "line of sight" in result.error
 	)
 
 
