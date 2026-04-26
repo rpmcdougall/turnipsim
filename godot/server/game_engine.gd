@@ -23,24 +23,9 @@ const Combat = preload("res://game/combat.gd")
 const Panic = preload("res://game/panic.gd")
 const Objectives = preload("res://game/objectives.gd")
 
-# Re-exported constants so existing GameEngine.BOARD_WIDTH etc. callers in
-# the server still compile during the staged module split.
-const BOARD_WIDTH: int = Board.BOARD_WIDTH
-const BOARD_HEIGHT: int = Board.BOARD_HEIGHT
-const DEPLOYMENT_ZONE_1_Y_MIN: int = Board.DEPLOYMENT_ZONE_1_Y_MIN
-const DEPLOYMENT_ZONE_1_Y_MAX: int = Board.DEPLOYMENT_ZONE_1_Y_MAX
-const DEPLOYMENT_ZONE_2_Y_MIN: int = Board.DEPLOYMENT_ZONE_2_Y_MIN
-const DEPLOYMENT_ZONE_2_Y_MAX: int = Board.DEPLOYMENT_ZONE_2_Y_MAX
-
 # Re-exported so existing GameEngine.MELEE_MAX_BOUTS callers compile.
 # Authoritative definition lives in game/combat.gd.
 const MELEE_MAX_BOUTS: int = Combat.MELEE_MAX_BOUTS
-
-
-## Thin wrapper for the few in-engine callers that still use the legacy name.
-## Removed in a follow-up once all callers move to Board.grid_distance directly.
-static func _grid_distance(x1: int, y1: int, x2: int, y2: int) -> float:
-	return Board.grid_distance(x1, y1, x2, y2)
 
 
 # =============================================================================
@@ -73,16 +58,16 @@ static func place_unit(state: Types.GameState, unit_id: String, x: int, y: int) 
 		result.error = "Unit already placed"
 		return result
 
-	if x < 0 or x >= BOARD_WIDTH or y < 0 or y >= BOARD_HEIGHT:
+	if x < 0 or x >= Board.BOARD_WIDTH or y < 0 or y >= Board.BOARD_HEIGHT:
 		result.error = "Coordinates out of bounds"
 		return result
 
 	var valid_zone: bool = false
 	if state.active_seat == 1:
-		if y >= DEPLOYMENT_ZONE_1_Y_MIN and y <= DEPLOYMENT_ZONE_1_Y_MAX:
+		if y >= Board.DEPLOYMENT_ZONE_1_Y_MIN and y <= Board.DEPLOYMENT_ZONE_1_Y_MAX:
 			valid_zone = true
 	else:
-		if y >= DEPLOYMENT_ZONE_2_Y_MIN and y <= DEPLOYMENT_ZONE_2_Y_MAX:
+		if y >= Board.DEPLOYMENT_ZONE_2_Y_MIN and y <= Board.DEPLOYMENT_ZONE_2_Y_MAX:
 			valid_zone = true
 
 	if not valid_zone:
@@ -260,7 +245,7 @@ static func declare_order(state: Types.GameState, unit_id: String, order_type: S
 		if unit.is_snob():
 			result.error = "Cannot order another Snob"
 			return result
-		var distance = _grid_distance(snob.x, snob.y, unit.x, unit.y)
+		var distance = Board.grid_distance(snob.x, snob.y, unit.x, unit.y)
 		if distance > snob.get_command_range():
 			result.error = "Unit out of command range (%.1f > %d)" % [distance, snob.get_command_range()]
 			return result
@@ -583,7 +568,7 @@ static func _execute_move_and_shoot(state: Types.GameState, unit: Types.UnitStat
 	var target_id = params.get("target_id", "")
 
 	# Movement validation
-	var move_error = _validate_move(state, unit, x, y)
+	var move_error = Board.validate_move(state, unit, x, y)
 	if move_error != "":
 		result.error = move_error
 		return result
@@ -592,7 +577,7 @@ static func _execute_move_and_shoot(state: Types.GameState, unit: Types.UnitStat
 	var max_move = unit.base_stats.movement
 	if state.current_order_blundered:
 		max_move = state.current_order_move_bonus  # D6 result stored during declare
-	var distance = _grid_distance(unit.x, unit.y, x, y)
+	var distance = Board.grid_distance(unit.x, unit.y, x, y)
 	if distance > max_move:
 		result.error = "Out of movement range (max %d)" % max_move
 		return result
@@ -679,14 +664,14 @@ static func _execute_march(state: Types.GameState, unit: Types.UnitState, params
 	var x = params.get("x", -1)
 	var y = params.get("y", -1)
 
-	var move_error = _validate_move(state, unit, x, y)
+	var move_error = Board.validate_move(state, unit, x, y)
 	if move_error != "":
 		result.error = move_error
 		return result
 
 	# March range: M + move_bonus (2D6 or 1D6 if blundered)
 	var max_move = unit.base_stats.movement + state.current_order_move_bonus
-	var distance = _grid_distance(unit.x, unit.y, x, y)
+	var distance = Board.grid_distance(unit.x, unit.y, x, y)
 	if distance > max_move:
 		result.error = "Out of march range (max %d = M%d + %d)" % [max_move, unit.base_stats.movement, state.current_order_move_bonus]
 		return result
@@ -759,7 +744,7 @@ static func _execute_charge(state: Types.GameState, unit: Types.UnitState, param
 
 	# Charge range: M + move_bonus. Must end adjacent (distance = 1) to target.
 	var charge_range = unit.base_stats.movement + state.current_order_move_bonus
-	var target_distance = _grid_distance(unit.x, unit.y, target.x, target.y)
+	var target_distance = Board.grid_distance(unit.x, unit.y, target.x, target.y)
 	if target_distance > charge_range:
 		result.error = "Target out of charge range (distance %.1f, max %d)" % [target_distance, charge_range]
 		return result
@@ -771,7 +756,7 @@ static func _execute_charge(state: Types.GameState, unit: Types.UnitState, param
 		return result
 
 	# Verify the adjacent cell is within charge range
-	var move_distance = _grid_distance(unit.x, unit.y, charge_dest.x, charge_dest.y)
+	var move_distance = Board.grid_distance(unit.x, unit.y, charge_dest.x, charge_dest.y)
 	if move_distance > charge_range:
 		result.error = "Cannot reach target (need %.1f, have %d)" % [move_distance, charge_range]
 		return result
@@ -1159,7 +1144,7 @@ static func _has_valid_charge_target(state: Types.GameState, unit: Types.UnitSta
 	for u in state.units:
 		if u.is_dead or u.owner_seat == unit.owner_seat:
 			continue
-		var d := _grid_distance(unit.x, unit.y, u.x, u.y)
+		var d := Board.grid_distance(unit.x, unit.y, u.x, u.y)
 		if d <= reach and _has_line_of_sight(state, unit.x, unit.y, u.x, u.y):
 			return true
 	return false
@@ -1184,18 +1169,11 @@ static func get_followers_in_command_range(state: Types.GameState, snob_id: Stri
 
 	for unit in state.units:
 		if unit.owner_seat == snob.owner_seat and not unit.is_snob() and not unit.is_dead and not unit.has_ordered:
-			var distance = _grid_distance(snob.x, snob.y, unit.x, unit.y)
+			var distance = Board.grid_distance(snob.x, snob.y, unit.x, unit.y)
 			if distance <= cmd_range:
 				result.append(unit.id)
 
 	return result
-
-
-## Thin wrapper retained so internal call sites still compile after the
-## board.gd extraction. Removed in a follow-up once callers move to
-## Board.validate_move directly.
-static func _validate_move(state: Types.GameState, unit: Types.UnitState, x: int, y: int) -> String:
-	return Board.validate_move(state, unit, x, y)
 
 
 ## Thin wrappers — implementations live in game/objectives.gd.
