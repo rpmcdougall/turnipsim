@@ -1455,7 +1455,7 @@ func _test_victory_conditions() -> void:
 			if unit.owner_seat == 2:
 				unit.is_dead = true
 
-		var victory = GameEngine.check_victory(state)
+		var victory = Objectives.check_victory(state)
 		return victory["winner"] == 1
 	)
 
@@ -1463,7 +1463,7 @@ func _test_victory_conditions() -> void:
 		var state = _mock_orders_state()
 		state.units[0].is_dead = true  # kill seat 1 Snob
 
-		var victory = GameEngine.check_victory(state)
+		var victory = Objectives.check_victory(state)
 		return victory["winner"] == 2 and "Snobs" in victory["reason"]
 	)
 
@@ -1474,14 +1474,14 @@ func _test_victory_conditions() -> void:
 		state.units.append(_mock_unit("u0", 1, "Toff", "snob", 6, 2, 5, 2, 5, 6, 1))
 		state.units[0].x = 10; state.units[0].y = 10
 
-		var victory = GameEngine.check_victory(state)
+		var victory = Objectives.check_victory(state)
 		return victory["winner"] == 0
 	)
 
 	_test("No winner when both have living units and snobs", func():
 		var state = _mock_orders_state()
 
-		var victory = GameEngine.check_victory(state)
+		var victory = Objectives.check_victory(state)
 		return victory["winner"] == 0 and victory["reason"] == ""
 	)
 
@@ -1491,7 +1491,7 @@ func _test_victory_conditions() -> void:
 		state.max_rounds = 4
 		state.objectives = _mock_objectives([[1, 2], [1, 0], [2, 0]])
 
-		var victory = GameEngine.check_victory(state)
+		var victory = Objectives.check_victory(state)
 		return victory["winner"] == 1 and "2 objective" in victory["reason"]
 	)
 
@@ -1506,7 +1506,7 @@ func _test_victory_conditions() -> void:
 				unit.model_count += 5
 				break
 
-		var victory = GameEngine.check_victory(state)
+		var victory = Objectives.check_victory(state)
 		return victory["winner"] == 0 and "Draw" in victory["reason"]
 	)
 
@@ -1516,7 +1516,7 @@ func _test_victory_conditions() -> void:
 		state.max_rounds = 4
 		state.objectives = _mock_objectives([[0, 0], [0, 0]])
 
-		var victory = GameEngine.check_victory(state)
+		var victory = Objectives.check_victory(state)
 		return victory["winner"] == 0 and "Draw" in victory["reason"]
 	)
 
@@ -1533,7 +1533,7 @@ func _test_objectives() -> void:
 		var state = _mock_orders_state()
 		state.objectives = _mock_objectives_at([[20, 15]])
 		state.units[2].x = 20; state.units[2].y = 16  # seat 1 Follower
-		GameEngine._resolve_objective_captures(state)
+		GameEngine.Objectives.resolve_objective_captures(state)
 		return state.objectives[0].captured_by == 1
 	)
 
@@ -1541,7 +1541,7 @@ func _test_objectives() -> void:
 		var state = _mock_orders_state()
 		state.objectives = _mock_objectives_at([[10, 29]])
 		# Seat 1 Snob at (10, 30) is already adjacent to (10, 29).
-		GameEngine._resolve_objective_captures(state)
+		GameEngine.Objectives.resolve_objective_captures(state)
 		return state.objectives[0].captured_by == 0
 	)
 
@@ -1551,7 +1551,7 @@ func _test_objectives() -> void:
 		state.objectives[0].captured_by = 1  # Pre-existing control
 		state.units[2].x = 15; state.units[2].y = 14  # seat 1 Follower
 		state.units[3].x = 15; state.units[3].y = 16  # seat 2 Follower
-		GameEngine._resolve_objective_captures(state)
+		GameEngine.Objectives.resolve_objective_captures(state)
 		return state.objectives[0].captured_by == 0
 	)
 
@@ -1562,7 +1562,7 @@ func _test_objectives() -> void:
 		# No followers adjacent at all.
 		state.units[2].x = 0; state.units[2].y = 0
 		state.units[3].x = 0; state.units[3].y = 31
-		GameEngine._resolve_objective_captures(state)
+		GameEngine.Objectives.resolve_objective_captures(state)
 		return state.objectives[0].captured_by == 2
 	)
 
@@ -1573,7 +1573,7 @@ func _test_objectives() -> void:
 		# Seat 2 Follower adjacent, seat 1 Follower far away.
 		state.units[2].x = 0; state.units[2].y = 0
 		state.units[3].x = 20; state.units[3].y = 14
-		GameEngine._resolve_objective_captures(state)
+		GameEngine.Objectives.resolve_objective_captures(state)
 		return state.objectives[0].captured_by == 2
 	)
 

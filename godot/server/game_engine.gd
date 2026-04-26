@@ -130,7 +130,7 @@ static func confirm_placement(state: Types.GameState) -> Types.EngineResult:
 		new_state.active_seat = new_state.initiative_seat
 		# v17 p.22: "Objectives with units deployed within 1" are considered
 		# captured." Run the resolver once deployment is final.
-		_resolve_objective_captures(new_state)
+		Objectives.resolve_objective_captures(new_state)
 		new_state.action_log.append({
 			"round": state.current_round,
 			"action": "orders_phase_started"
@@ -915,7 +915,7 @@ static func _execute_charge(state: Types.GameState, unit: Types.UnitState, param
 ## Marks units as ordered, switches players, transitions phases.
 static func _advance_after_order(state: Types.GameState) -> void:
 	# Re-resolve objective control after any positional or unit-death change.
-	_resolve_objective_captures(state)
+	Objectives.resolve_objective_captures(state)
 
 	# Mark the ordered unit
 	var unit = _find_unit(state, state.current_order_unit_id)
@@ -989,16 +989,6 @@ static func _end_round(state: Types.GameState) -> void:
 
 
 # =============================================================================
-# VICTORY CONDITION
-# =============================================================================
-
-## Thin wrapper — implementation in game/objectives.gd. Public (no underscore)
-## because external callers (network_server, victory banner) use the legacy name.
-static func check_victory(state: Types.GameState) -> Dictionary:
-	return Objectives.check_victory(state)
-
-
-# =============================================================================
 # HELPER FUNCTIONS
 # =============================================================================
 
@@ -1067,14 +1057,5 @@ static func get_followers_in_command_range(state: Types.GameState, snob_id: Stri
 				result.append(unit.id)
 
 	return result
-
-
-## Thin wrappers — implementations live in game/objectives.gd.
-static func _is_objective_at(state: Types.GameState, x: int, y: int) -> bool:
-	return Objectives.is_objective_at(state, x, y)
-
-
-static func _resolve_objective_captures(state: Types.GameState) -> void:
-	Objectives.resolve_objective_captures(state)
 
 
