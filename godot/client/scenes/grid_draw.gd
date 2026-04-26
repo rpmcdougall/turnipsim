@@ -1,6 +1,8 @@
 extends Control
 ## Draws the game board grid, deployment zones, and cell highlights.
 
+const Board = preload("res://game/board.gd")
+
 var battle_ref = null  # Reference to battle.gd for cell_size and state
 
 
@@ -12,8 +14,8 @@ func _draw() -> void:
 	if cs <= 0:
 		return
 
-	var bw = battle_ref.BOARD_WIDTH
-	var bh = battle_ref.BOARD_HEIGHT
+	var bw = Board.BOARD_WIDTH
+	var bh = Board.BOARD_HEIGHT
 
 	# Board background
 	draw_rect(Rect2(0, 0, bw * cs, bh * cs), Color(0.12, 0.12, 0.16))
@@ -21,12 +23,12 @@ func _draw() -> void:
 	# Deployment zones
 	# Seat 1 (bottom) — blue tint
 	draw_rect(
-		Rect2(0, battle_ref.DEPLOY_1_Y_MIN * cs, bw * cs, (battle_ref.DEPLOY_1_Y_MAX - battle_ref.DEPLOY_1_Y_MIN + 1) * cs),
+		Rect2(0, Board.DEPLOYMENT_ZONE_1_Y_MIN * cs, bw * cs, (Board.DEPLOYMENT_ZONE_1_Y_MAX - Board.DEPLOYMENT_ZONE_1_Y_MIN + 1) * cs),
 		Color(0.15, 0.2, 0.35, 0.5)
 	)
 	# Seat 2 (top) — red tint
 	draw_rect(
-		Rect2(0, battle_ref.DEPLOY_2_Y_MIN * cs, bw * cs, (battle_ref.DEPLOY_2_Y_MAX - battle_ref.DEPLOY_2_Y_MIN + 1) * cs),
+		Rect2(0, Board.DEPLOYMENT_ZONE_2_Y_MIN * cs, bw * cs, (Board.DEPLOYMENT_ZONE_2_Y_MAX - Board.DEPLOYMENT_ZONE_2_Y_MIN + 1) * cs),
 		Color(0.35, 0.15, 0.15, 0.5)
 	)
 
@@ -41,8 +43,8 @@ func _draw() -> void:
 	var font = ThemeDB.fallback_font
 	if font:
 		var font_size = clampi(int(cs * 0.8), 10, 20)
-		draw_string(font, Vector2(4, battle_ref.DEPLOY_2_Y_MAX * cs + cs * 0.8), "P2 Deploy", HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, Color(1, 0.6, 0.6, 0.6))
-		draw_string(font, Vector2(4, battle_ref.DEPLOY_1_Y_MIN * cs + cs * 0.8), "P1 Deploy", HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, Color(0.6, 0.6, 1.0, 0.6))
+		draw_string(font, Vector2(4, Board.DEPLOYMENT_ZONE_2_Y_MAX * cs + cs * 0.8), "P2 Deploy", HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, Color(1, 0.6, 0.6, 0.6))
+		draw_string(font, Vector2(4, Board.DEPLOYMENT_ZONE_1_Y_MIN * cs + cs * 0.8), "P1 Deploy", HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, Color(0.6, 0.6, 1.0, 0.6))
 
 	var state = battle_ref.current_game_state
 

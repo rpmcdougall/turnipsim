@@ -1,14 +1,10 @@
 extends Control
 ## Battle — main gameplay view, unit placement, combat resolution.
+##
+## Board geometry and deployment zones live in game/board.gd — never
+## redeclare them here. Use Board.BOARD_WIDTH etc.
 
-const BOARD_WIDTH = 48
-const BOARD_HEIGHT = 32
-
-# Deployment zones
-const DEPLOY_1_Y_MIN = 28
-const DEPLOY_1_Y_MAX = 31
-const DEPLOY_2_Y_MIN = 0
-const DEPLOY_2_Y_MAX = 3
+const Board = preload("res://game/board.gd")
 
 # Scene nodes
 var board_container: Control
@@ -330,8 +326,8 @@ func _recompute_cell_size() -> void:
 	if avail.x <= 0 or avail.y <= 0:
 		return
 	# Fit board into available space, maintaining aspect ratio
-	var cs_x = avail.x / BOARD_WIDTH
-	var cs_y = avail.y / BOARD_HEIGHT
+	var cs_x = avail.x / Board.BOARD_WIDTH
+	var cs_y = avail.y / Board.BOARD_HEIGHT
 	cell_size = min(cs_x, cs_y)
 
 
@@ -536,7 +532,7 @@ func _input(event: InputEvent) -> void:
 		var local_pos = board_container.get_local_mouse_position()
 		var grid = pixel_to_grid(local_pos.x, local_pos.y)
 
-		if grid.x < 0 or grid.x >= BOARD_WIDTH or grid.y < 0 or grid.y >= BOARD_HEIGHT:
+		if not Board.is_in_bounds(grid.x, grid.y):
 			return
 
 		if current_game_state.phase == "placement":

@@ -14,29 +14,30 @@ extends RefCounted
 ##   5. After all Snobs ordered, unordered Followers order themselves
 ##   6. Round ends, advance to next round
 
-# Board constants
-const BOARD_WIDTH: int = 48
-const BOARD_HEIGHT: int = 32
+# Board geometry, distance, and move validation live in game/board.gd.
+# Preloaded (not class_name) so headless test runs don't depend on the
+# global script class cache being up to date.
+const Board = preload("res://game/board.gd")
 
-
-## Euclidean distance between two grid cells.
-## All range/movement checks use this instead of Manhattan distance so that
-## diagonal distances are geometrically correct (1 cell = 1 inch).
-static func _grid_distance(x1: int, y1: int, x2: int, y2: int) -> float:
-	var dx: int = x2 - x1
-	var dy: int = y2 - y1
-	return sqrt(float(dx * dx + dy * dy))
-
-# Deployment zones (4 rows each)
-const DEPLOYMENT_ZONE_1_Y_MIN: int = 28  # Bottom (seat 1)
-const DEPLOYMENT_ZONE_1_Y_MAX: int = 31
-const DEPLOYMENT_ZONE_2_Y_MIN: int = 0   # Top (seat 2)
-const DEPLOYMENT_ZONE_2_Y_MAX: int = 3
+# Re-exported constants so existing GameEngine.BOARD_WIDTH etc. callers in
+# the server still compile during the staged module split.
+const BOARD_WIDTH: int = Board.BOARD_WIDTH
+const BOARD_HEIGHT: int = Board.BOARD_HEIGHT
+const DEPLOYMENT_ZONE_1_Y_MIN: int = Board.DEPLOYMENT_ZONE_1_Y_MIN
+const DEPLOYMENT_ZONE_1_Y_MAX: int = Board.DEPLOYMENT_ZONE_1_Y_MAX
+const DEPLOYMENT_ZONE_2_Y_MIN: int = Board.DEPLOYMENT_ZONE_2_Y_MIN
+const DEPLOYMENT_ZONE_2_Y_MAX: int = Board.DEPLOYMENT_ZONE_2_Y_MAX
 
 # Melee bout cap — v17 has no hard limit, but tied bouts could loop forever on
 # whiffing dice. Cap at 3; unresolved ties after the cap end in a draw with no
 # retreat (both sides still take +1 panic per melee-ended rule).
 const MELEE_MAX_BOUTS: int = 3
+
+
+## Thin wrapper for the few in-engine callers that still use the legacy name.
+## Removed in a follow-up once all callers move to Board.grid_distance directly.
+static func _grid_distance(x1: int, y1: int, x2: int, y2: int) -> float:
+	return Board.grid_distance(x1, y1, x2, y2)
 
 
 # =============================================================================
@@ -1832,18 +1833,11 @@ static func get_followers_in_command_range(state: Types.GameState, snob_id: Stri
 	return result
 
 
-## Validate basic movement constraints (bounds, not occupied).
+## Thin wrapper retained so internal call sites still compile after the
+## board.gd extraction. Removed in a follow-up once callers move to
+## Board.validate_move directly.
 static func _validate_move(state: Types.GameState, unit: Types.UnitState, x: int, y: int) -> String:
-	if x < 0 or x >= BOARD_WIDTH or y < 0 or y >= BOARD_HEIGHT:
-		return "Coordinates out of bounds"
-	for u in state.units:
-		if not u.is_dead and u.x == x and u.y == y and u.id != unit.id:
-			return "Position occupied"
-	# v17 core p.22: "A unit may move across objectives, but may never finish
-	# a move on top of one."
-	if _is_objective_at(state, x, y):
-		return "Cannot end move on an objective marker"
-	return ""
+	return Board.validate_move(state, unit, x, y)
 
 
 ## Is there an objective marker at this cell?
