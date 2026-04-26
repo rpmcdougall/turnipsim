@@ -452,7 +452,8 @@ class GameState extends RefCounted:
 
 		var action_log_array: Array[Dictionary] = []
 		if data.has("action_log"):
-			action_log_array.assign(data["action_log"])
+			for entry in data["action_log"]:
+				action_log_array.append((entry as Dictionary).duplicate(true))
 
 		var gs = GameState.new(
 			data.get("room_code", ""),

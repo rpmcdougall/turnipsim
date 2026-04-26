@@ -96,6 +96,16 @@ func _test_types() -> void:
 		return restored.initiative_seat == 2 and restored.max_rounds == 4
 	)
 
+	_test("GameState clone deep-copies action_log entries", func():
+		var log: Array[Dictionary] = [{"type": "shoot", "shooter": "u1", "dice": [3, 4, 5]}]
+		var units: Array[Types.UnitState] = []
+		var src = Types.GameState.new("ABCD", "placement", 1, 4, 1, 1, units, log, 0)
+		var clone = Types.GameState.from_dict(src.to_dict())
+		clone.action_log[0]["shooter"] = "MUTATED"
+		(clone.action_log[0]["dice"] as Array).append(6)
+		return src.action_log[0]["shooter"] == "u1" and (src.action_log[0]["dice"] as Array).size() == 3
+	)
+
 
 ## Test Ruleset loading and validation
 func _test_ruleset_loader() -> void:
