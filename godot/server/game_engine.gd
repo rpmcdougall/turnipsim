@@ -481,7 +481,7 @@ static func _execute_volley_fire(state: Types.GameState, unit: Types.UnitState, 
 		return result
 
 	# LoS + range + closest-target validation
-	var target_error = _is_valid_shooting_target(state, unit, target)
+	var target_error = Targeting.is_valid_shooting_target(state, unit, target)
 	if target_error != "":
 		result.error = target_error
 		return result
@@ -607,7 +607,7 @@ static func _execute_move_and_shoot(state: Types.GameState, unit: Types.UnitStat
 		new_target = _find_unit(new_state, target_id)
 		if new_target and not new_target.is_dead and new_target.owner_seat != unit.owner_seat:
 			# Validate from post-move position: range + LoS + closest-target
-			var shoot_error = _is_valid_shooting_target_from(new_state, new_unit, new_target, x, y)
+			var shoot_error = Targeting.is_valid_shooting_target_from(new_state, new_unit, new_target, x, y)
 			if shoot_error == "" and not new_unit.has_powder_smoke:
 				combat = _resolve_shooting_engagement(new_unit, new_target, dice_results, 0)
 				if combat["error"] != "":
@@ -738,7 +738,7 @@ static func _execute_charge(state: Types.GameState, unit: Types.UnitState, param
 		return result
 
 	# LoS check (v17 p.16: must have LoS to charge target)
-	if not _has_line_of_sight(state, unit.x, unit.y, target.x, target.y):
+	if not Targeting.has_line_of_sight(state, unit.x, unit.y, target.x, target.y):
 		result.error = "No line of sight to charge target"
 		return result
 
@@ -750,7 +750,7 @@ static func _execute_charge(state: Types.GameState, unit: Types.UnitState, param
 		return result
 
 	# Find an adjacent cell to the target to move to
-	var charge_dest = _find_adjacent_cell(state, unit, target)
+	var charge_dest = Targeting.find_adjacent_cell(state, unit, target)
 	if charge_dest.x == -1:
 		result.error = "No open cell adjacent to target"
 		return result
@@ -1075,32 +1075,6 @@ static func check_victory(state: Types.GameState) -> Dictionary:
 
 
 # =============================================================================
-# LINE OF SIGHT + TARGETING
-# =============================================================================
-
-## Thin wrappers — implementations live in game/targeting.gd. Removed in a
-## follow-up once internal callers move to Targeting.* directly.
-static func _has_line_of_sight(state: Types.GameState, from_x: int, from_y: int, to_x: int, to_y: int) -> bool:
-	return Targeting.has_line_of_sight(state, from_x, from_y, to_x, to_y)
-
-
-static func _find_shooting_targets(state: Types.GameState, shooter: Types.UnitState) -> Array:
-	return Targeting.find_shooting_targets(state, shooter)
-
-
-static func _find_shooting_targets_from(state: Types.GameState, shooter: Types.UnitState, from_x: int, from_y: int) -> Array:
-	return Targeting.find_shooting_targets_from(state, shooter, from_x, from_y)
-
-
-static func _is_valid_shooting_target(state: Types.GameState, shooter: Types.UnitState, target: Types.UnitState) -> String:
-	return Targeting.is_valid_shooting_target(state, shooter, target)
-
-
-static func _is_valid_shooting_target_from(state: Types.GameState, shooter: Types.UnitState, target: Types.UnitState, from_x: int, from_y: int) -> String:
-	return Targeting.is_valid_shooting_target_from(state, shooter, target, from_x, from_y)
-
-
-# =============================================================================
 # HELPER FUNCTIONS
 # =============================================================================
 
@@ -1133,7 +1107,7 @@ static func _has_unordered_snobs(state: Types.GameState, seat: int) -> bool:
 
 ## Does at least one alive enemy unit sit inside the shooter's weapon range?
 static func _has_valid_volley_target(state: Types.GameState, unit: Types.UnitState) -> bool:
-	return not _find_shooting_targets(state, unit).is_empty()
+	return not Targeting.find_shooting_targets(state, unit).is_empty()
 
 
 ## Does at least one alive enemy unit sit inside the charger's M + move_bonus range with LoS?
@@ -1145,7 +1119,7 @@ static func _has_valid_charge_target(state: Types.GameState, unit: Types.UnitSta
 		if u.is_dead or u.owner_seat == unit.owner_seat:
 			continue
 		var d := Board.grid_distance(unit.x, unit.y, u.x, u.y)
-		if d <= reach and _has_line_of_sight(state, unit.x, unit.y, u.x, u.y):
+		if d <= reach and Targeting.has_line_of_sight(state, unit.x, unit.y, u.x, u.y):
 			return true
 	return false
 
@@ -1185,6 +1159,3 @@ static func _resolve_objective_captures(state: Types.GameState) -> void:
 	Objectives.resolve_objective_captures(state)
 
 
-## Thin wrapper — implementation in game/targeting.gd.
-static func _find_adjacent_cell(state: Types.GameState, charger: Types.UnitState, target: Types.UnitState) -> Vector2i:
-	return Targeting.find_adjacent_cell(state, charger, target)

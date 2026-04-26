@@ -3,6 +3,11 @@ extends SceneTree
 ##
 ## Run with: godot --headless -s tests/test_game_engine.gd
 
+const Targeting = preload("res://game/targeting.gd")
+const Combat = preload("res://game/combat.gd")
+const Panic = preload("res://game/panic.gd")
+const Objectives = preload("res://game/objectives.gd")
+
 var _tests_passed: int = 0
 var _tests_failed: int = 0
 
@@ -988,7 +993,7 @@ func _test_melee_bouts() -> void:
 		var result = GameEngine.execute_order(state, params, dice)
 
 		# Charger moved adjacent to (x=10, y=10 → x=10 target at 11), charge_dest x=10 wait...
-		# _find_adjacent_cell picks nearest adjacent cell to target. Target at (11,10), charger
+		# Targeting.find_adjacent_cell picks nearest adjacent cell to target. Target at (11,10), charger
 		# approaching from (10,10) → adjacent cell (10,10) itself is distance 1 from target. Fine.
 		# After losing: charger retreats 2×(panic_tokens_after_melee=1) = 2 cells away from defender.
 		# Defender at (11,10), charger now at charge_dest.x. Retreat direction = -x.
@@ -1222,7 +1227,7 @@ func _test_line_of_sight() -> void:
 		# No blockers between them
 		state.units[2].x = 5; state.units[2].y = 5  # out of the way
 		state.units[3].x = 30; state.units[3].y = 5  # out of the way
-		return GameEngine._has_line_of_sight(state, 10, 15, 20, 15)
+		return GameEngine.Targeting.has_line_of_sight(state, 10, 15, 20, 15)
 	)
 
 	_test("LoS: Follower unit on the line blocks", func():
@@ -1231,7 +1236,7 @@ func _test_line_of_sight() -> void:
 		state.units[1].x = 20; state.units[1].y = 15
 		# Place a Follower directly between them
 		state.units[2].x = 15; state.units[2].y = 15
-		return not GameEngine._has_line_of_sight(state, 10, 15, 20, 15)
+		return not GameEngine.Targeting.has_line_of_sight(state, 10, 15, 20, 15)
 	)
 
 	_test("LoS: Snob on the line does NOT block", func():
@@ -1244,7 +1249,7 @@ func _test_line_of_sight() -> void:
 		state.units[3].x = 20; state.units[3].y = 15  # Follower as actual target
 		# LoS from u0 to u3 should pass — u1 (Snob) doesn't block.
 		state.units[2].x = 5; state.units[2].y = 5  # out of the way
-		return GameEngine._has_line_of_sight(state, 10, 15, 20, 15)
+		return GameEngine.Targeting.has_line_of_sight(state, 10, 15, 20, 15)
 	)
 
 	_test("LoS: dead unit on the line does NOT block", func():
@@ -1254,7 +1259,7 @@ func _test_line_of_sight() -> void:
 		state.units[2].x = 15; state.units[2].y = 15  # Follower in the way
 		state.units[2].is_dead = true  # but dead
 		state.units[3].x = 30; state.units[3].y = 5
-		return GameEngine._has_line_of_sight(state, 10, 15, 20, 15)
+		return GameEngine.Targeting.has_line_of_sight(state, 10, 15, 20, 15)
 	)
 
 	_test("LoS: endpoints are excluded from blocker check", func():
@@ -1264,7 +1269,7 @@ func _test_line_of_sight() -> void:
 		state.units[3].x = 20; state.units[3].y = 15
 		state.units[0].x = 5; state.units[0].y = 5
 		state.units[1].x = 30; state.units[1].y = 5
-		return GameEngine._has_line_of_sight(state, 10, 15, 20, 15)
+		return GameEngine.Targeting.has_line_of_sight(state, 10, 15, 20, 15)
 	)
 
 	_test("LoS: diagonal line blocked by unit on the path", func():
@@ -1274,7 +1279,7 @@ func _test_line_of_sight() -> void:
 		# Place blocker at (13,13) — on the diagonal line
 		state.units[2].x = 13; state.units[2].y = 13
 		state.units[3].x = 30; state.units[3].y = 5
-		return not GameEngine._has_line_of_sight(state, 10, 10, 16, 16)
+		return not GameEngine.Targeting.has_line_of_sight(state, 10, 10, 16, 16)
 	)
 
 	_test("closest-target: reject non-closest enemy", func():
