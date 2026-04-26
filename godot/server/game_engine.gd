@@ -292,7 +292,7 @@ static func declare_order(state: Types.GameState, unit_id: String, order_type: S
 	var blundered = false
 	if not ordering_self and blunder_die == 1:
 		blundered = true
-		var new_unit = _find_unit_in(new_state, unit_id)
+		var new_unit = _find_unit(new_state, unit_id)
 		new_unit.panic_tokens = mini(new_unit.panic_tokens + 1, 6)
 
 	new_state.order_phase = "order_execute"
@@ -385,7 +385,7 @@ static func declare_self_order(state: Types.GameState, unit_id: String, order_ty
 	# Always blunder check for self-ordering followers
 	var blundered = (blunder_die == 1)
 	if blundered:
-		var new_unit = _find_unit_in(new_state, unit_id)
+		var new_unit = _find_unit(new_state, unit_id)
 		new_unit.panic_tokens = mini(new_unit.panic_tokens + 1, 6)
 
 	new_state.order_phase = "order_execute"
@@ -508,8 +508,8 @@ static func _execute_volley_fire(state: Types.GameState, unit: Types.UnitState, 
 	var retreat_die: int = params.get("retreat_die", 1)
 
 	var new_state = _clone_state(state)
-	var new_unit = _find_unit_in(new_state, unit.id)
-	var new_target = _find_unit_in(new_state, target_id)
+	var new_unit = _find_unit(new_state, unit.id)
+	var new_target = _find_unit(new_state, target_id)
 
 	var combat = _resolve_shooting_engagement(new_unit, new_target, dice_results, inaccuracy_mod)
 	if combat["error"] != "":
@@ -519,7 +519,7 @@ static func _execute_volley_fire(state: Types.GameState, unit: Types.UnitState, 
 	# Loser retreats (v17 core p.15). Tie → no retreat.
 	var retreat: Dictionary = {}
 	if not combat["tie"] and combat["loser_id"] != "":
-		var loser = _find_unit_in(new_state, combat["loser_id"])
+		var loser = _find_unit(new_state, combat["loser_id"])
 		if loser and not loser.is_dead:
 			retreat = _execute_retreat(new_state, combat["loser_id"], retreat_die)
 
@@ -601,7 +601,7 @@ static func _execute_move_and_shoot(state: Types.GameState, unit: Types.UnitStat
 		return result
 
 	var new_state = _clone_state(state)
-	var new_unit = _find_unit_in(new_state, unit.id)
+	var new_unit = _find_unit(new_state, unit.id)
 
 	# Move the unit
 	new_unit.x = x
@@ -622,7 +622,7 @@ static func _execute_move_and_shoot(state: Types.GameState, unit: Types.UnitStat
 	var fired: bool = false
 	var new_target: Types.UnitState = null
 	if target_id != "":
-		new_target = _find_unit_in(new_state, target_id)
+		new_target = _find_unit(new_state, target_id)
 		if new_target and not new_target.is_dead and new_target.owner_seat != unit.owner_seat:
 			# Validate from post-move position: range + LoS + closest-target
 			var shoot_error = _is_valid_shooting_target_from(new_state, new_unit, new_target, x, y)
@@ -633,7 +633,7 @@ static func _execute_move_and_shoot(state: Types.GameState, unit: Types.UnitStat
 					return result
 				fired = true
 				if not combat["tie"] and combat["loser_id"] != "":
-					var loser = _find_unit_in(new_state, combat["loser_id"])
+					var loser = _find_unit(new_state, combat["loser_id"])
 					if loser and not loser.is_dead:
 						retreat = _execute_retreat(new_state, combat["loser_id"], retreat_die)
 
@@ -696,7 +696,7 @@ static func _execute_march(state: Types.GameState, unit: Types.UnitState, params
 		return result
 
 	var new_state = _clone_state(state)
-	var new_unit = _find_unit_in(new_state, unit.id)
+	var new_unit = _find_unit(new_state, unit.id)
 	new_unit.x = x
 	new_unit.y = y
 
@@ -783,8 +783,8 @@ static func _execute_charge(state: Types.GameState, unit: Types.UnitState, param
 		return result
 
 	var new_state = _clone_state(state)
-	var new_unit = _find_unit_in(new_state, unit.id)
-	var new_target = _find_unit_in(new_state, target_id)
+	var new_unit = _find_unit(new_state, unit.id)
+	var new_target = _find_unit(new_state, target_id)
 
 	# v17 core p.16: target takes panic test when charged.
 	var panic_die: int = params.get("panic_die", 1)
@@ -858,7 +858,7 @@ static func _execute_charge(state: Types.GameState, unit: Types.UnitState, param
 	var retreat: Dictionary = {}
 	var charger_retreated: bool = false
 	if not combat["draw"] and combat["loser_id"] != "":
-		var loser = _find_unit_in(new_state, combat["loser_id"])
+		var loser = _find_unit(new_state, combat["loser_id"])
 		if loser and not loser.is_dead:
 			retreat = _execute_retreat(new_state, combat["loser_id"], retreat_die)
 			if combat["loser_id"] == new_unit.id:
@@ -945,13 +945,13 @@ static func _advance_after_order(state: Types.GameState) -> void:
 	_resolve_objective_captures(state)
 
 	# Mark the ordered unit
-	var unit = _find_unit_in(state, state.current_order_unit_id)
+	var unit = _find_unit(state, state.current_order_unit_id)
 	if unit:
 		unit.has_ordered = true
 
 	# Mark the snob (if one was commanding)
 	if state.current_snob_id != "":
-		var snob = _find_unit_in(state, state.current_snob_id)
+		var snob = _find_unit(state, state.current_snob_id)
 		if snob:
 			snob.has_ordered = true
 
@@ -1089,7 +1089,7 @@ static func _panic_test(unit: Types.UnitState, panic_die: int, fearless_die: int
 ##           retreat_die, stubborn_held, no_enemy }.
 ## DT tests for crossing Followers deferred to terrain system (#58).
 static func _execute_retreat(state: Types.GameState, unit_id: String, retreat_die: int) -> Dictionary:
-	var unit = _find_unit_in(state, unit_id)
+	var unit = _find_unit(state, unit_id)
 	var result = {
 		"retreated": false,
 		"destroyed": false,
@@ -1770,16 +1770,9 @@ static func _clone_state(state: Types.GameState) -> Types.GameState:
 	return Types.GameState.from_dict(state.to_dict())
 
 
-## Find a unit by ID in a GameState (read-only).
+## Find a unit by ID in a GameState. Caller decides whether the returned
+## reference is treated as read-only or as the mutable handle into a cloned state.
 static func _find_unit(state: Types.GameState, unit_id: String) -> Types.UnitState:
-	for u in state.units:
-		if u.id == unit_id:
-			return u
-	return null
-
-
-## Find a unit by ID in a mutable state (for modification after clone).
-static func _find_unit_in(state: Types.GameState, unit_id: String) -> Types.UnitState:
 	for u in state.units:
 		if u.id == unit_id:
 			return u
