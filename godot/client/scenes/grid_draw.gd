@@ -2,6 +2,7 @@ extends Control
 ## Draws the game board grid, deployment zones, and cell highlights.
 
 const Board = preload("res://game/board.gd")
+const Targeting = preload("res://game/targeting.gd")
 
 var battle_ref = null  # Reference to battle.gd for cell_size and state
 
@@ -152,7 +153,7 @@ func _draw_order_execute_overlay(state, cs: float, bw: int, bh: int) -> void:
 		"volley_fire":
 			var reach = unit.base_stats.weapon_range
 			_draw_range_circle(unit.x, unit.y, reach, cs, bw, bh, shoot_fill, shoot_outline)
-			target_cells = _enemy_cells_within(unit.x, unit.y, reach, unit.owner_seat)
+			target_cells = _shooting_target_cells(state, unit, unit.x, unit.y)
 		"march":
 			var reach = unit.base_stats.movement + move_bonus
 			_draw_range_circle(unit.x, unit.y, reach, cs, bw, bh, move_fill, move_outline)
@@ -175,7 +176,7 @@ func _draw_order_execute_overlay(state, cs: float, bw: int, bh: int) -> void:
 				# Shoot reach from the staged cell
 				var reach = unit.base_stats.weapon_range
 				_draw_range_circle(px, py, reach, cs, bw, bh, shoot_fill, shoot_outline)
-				target_cells = _enemy_cells_within(px, py, reach, unit.owner_seat)
+				target_cells = _shooting_target_cells(state, unit, px, py)
 				# Mark the staged cell itself
 				draw_rect(Rect2(px * cs, py * cs, cs, cs), Color(1.0, 1.0, 0.4, 0.25))
 				draw_rect(Rect2(px * cs, py * cs, cs, cs), Color(1.0, 1.0, 0.4, 0.9), false, 2.0)
@@ -191,7 +192,8 @@ func _draw_order_execute_overlay(state, cs: float, bw: int, bh: int) -> void:
 
 
 ## Return cell coords of alive enemies within Euclidean distance `reach` of
-## (cx, cy). Empty when reach <= 0.
+## (cx, cy). Empty when reach <= 0. Used for charge target hints — charge
+## ignores LoS in v17 so a pure distance check is correct here.
 func _enemy_cells_within(cx: int, cy: int, reach: int, own_seat: int) -> Array:
 	var out: Array = []
 	if reach <= 0:
@@ -199,14 +201,26 @@ func _enemy_cells_within(cx: int, cy: int, reach: int, own_seat: int) -> Array:
 	var state = battle_ref.current_game_state
 	if not state:
 		return out
-	var r_sq: float = float(reach * reach)
 	for u in state.units:
 		if u.is_dead or u.owner_seat == own_seat:
 			continue
 		if u.x < 0 or u.y < 0:
 			continue
-		var dx: int = u.x - cx
-		var dy: int = u.y - cy
-		if float(dx * dx + dy * dy) <= r_sq:
+		if Board.grid_distance(cx, cy, u.x, u.y) <= reach:
 			out.append(Vector2i(u.x, u.y))
+	return out
+
+
+## Cells of legal shooting targets for `shooter` firing from (fx, fy).
+## Delegates to the shared Targeting module so green target rings always
+## match what the server would accept (LoS, range, dead/own filters).
+## Closest-target restriction is NOT applied here — Sharpshooters and the
+## "any-of-tied-closest" rule make showing all-in-range cells the most
+## informative hint; the order-validation step still blocks illegal picks.
+func _shooting_target_cells(state, shooter, fx: int, fy: int) -> Array:
+	var out: Array = []
+	if not state or not shooter:
+		return out
+	for u in Targeting.find_shooting_targets_from(state, shooter, fx, fy):
+		out.append(Vector2i(u.x, u.y))
 	return out
