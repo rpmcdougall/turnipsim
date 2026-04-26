@@ -96,7 +96,7 @@ class UnitDef extends RefCounted:
 		category = p_category
 		model_count = p_model_count
 		base_stats = p_base_stats if p_base_stats else Stats.new()
-		special_rules = p_special_rules
+		special_rules = p_special_rules.duplicate()
 		allowed_equipment = p_allowed_equipment
 		description = p_description
 
@@ -274,7 +274,7 @@ class UnitState extends RefCounted:
 		max_models = p_max_models
 		base_stats = p_base_stats if p_base_stats else Stats.new()
 		equipment = p_equipment
-		special_rules = p_special_rules
+		special_rules = p_special_rules.duplicate()
 		panic_tokens = p_panic_tokens
 		has_powder_smoke = p_has_powder_smoke
 		current_wounds = p_current_wounds

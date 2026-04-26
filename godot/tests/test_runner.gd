@@ -89,6 +89,18 @@ func _test_types() -> void:
 		return snob.is_snob() and snob.get_command_range() == 6
 	)
 
+	_test("UnitState/UnitDef do not alias special_rules across instances", func():
+		var rules: Array[String] = ["fearless"]
+		var stats = Types.Stats.new(6, 2, 5, 2, 5, 6)
+		var u1 = Types.UnitState.new("a", 1, "Toff", "snob", 1, 1, stats, "", rules)
+		var u2 = Types.UnitState.new("b", 1, "Toff", "snob", 1, 1, stats, "", rules)
+		u1.special_rules.append("stubborn")
+		var def1 = Types.UnitDef.new("Toff", "snob", 1, stats, rules)
+		var def2 = Types.UnitDef.new("Toff", "snob", 1, stats, rules)
+		def1.special_rules.append("dervish")
+		return u2.special_rules.size() == 1 and def2.special_rules.size() == 1 and rules.size() == 1
+	)
+
 	_test("GameState with initiative and rounds", func():
 		var gs = Types.GameState.new("ABCD", "placement", 1, 4, 1, 2)
 		var dict = gs.to_dict()
