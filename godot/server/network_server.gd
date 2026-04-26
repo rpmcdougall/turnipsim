@@ -2,6 +2,9 @@ extends Node
 ## ENet server listener — Phase 3 + 4.
 ## Exposes RPCs for clients to interact with the server.
 
+const Combat = preload("res://game/combat.gd")
+const Objectives = preload("res://game/objectives.gd")
+
 @onready var room_manager: Node = get_parent().get_node("RoomManager")
 
 # Active game states: room_code -> Types.GameState
@@ -358,7 +361,7 @@ func _roll_d6() -> int:
 
 ## Helper: Roll the combat dice pool an execute_order requires, sized to the
 ## ordered unit and the declared order type. Charge sizing accounts for the
-## full melee: both sides strike per bout, up to GameEngine.MELEE_MAX_BOUTS.
+## full melee: both sides strike per bout, up to Combat.MELEE_MAX_BOUTS.
 func _roll_execute_dice(state: Types.GameState, params: Dictionary) -> Array:
 	var unit = _find_unit(state, state.current_order_unit_id)
 	if unit == null:
@@ -384,7 +387,7 @@ func _roll_execute_dice(state: Types.GameState, params: Dictionary) -> Array:
 			var target = _find_unit(state, params.get("target_id", ""))
 			if target != null:
 				def_per_bout = target.model_count * target.base_stats.attacks * 2
-			num_dice = (atk_per_bout + def_per_bout) * GameEngine.MELEE_MAX_BOUTS
+			num_dice = (atk_per_bout + def_per_bout) * Combat.MELEE_MAX_BOUTS
 		"march":
 			num_dice = 0
 

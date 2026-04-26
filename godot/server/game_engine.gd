@@ -23,10 +23,6 @@ const Combat = preload("res://game/combat.gd")
 const Panic = preload("res://game/panic.gd")
 const Objectives = preload("res://game/objectives.gd")
 
-# Re-exported so existing GameEngine.MELEE_MAX_BOUTS callers compile.
-# Authoritative definition lives in game/combat.gd.
-const MELEE_MAX_BOUTS: int = Combat.MELEE_MAX_BOUTS
-
 
 # =============================================================================
 # PLACEMENT PHASE
@@ -494,7 +490,7 @@ static func _execute_volley_fire(state: Types.GameState, unit: Types.UnitState, 
 	var new_unit = _find_unit(new_state, unit.id)
 	var new_target = _find_unit(new_state, target_id)
 
-	var combat = _resolve_shooting_engagement(new_unit, new_target, dice_results, inaccuracy_mod)
+	var combat = Combat.resolve_shooting_engagement(new_unit, new_target, dice_results, inaccuracy_mod)
 	if combat["error"] != "":
 		result.error = combat["error"]
 		return result
@@ -609,7 +605,7 @@ static func _execute_move_and_shoot(state: Types.GameState, unit: Types.UnitStat
 			# Validate from post-move position: range + LoS + closest-target
 			var shoot_error = Targeting.is_valid_shooting_target_from(new_state, new_unit, new_target, x, y)
 			if shoot_error == "" and not new_unit.has_powder_smoke:
-				combat = _resolve_shooting_engagement(new_unit, new_target, dice_results, 0)
+				combat = Combat.resolve_shooting_engagement(new_unit, new_target, dice_results, 0)
 				if combat["error"] != "":
 					result.error = combat["error"]
 					return result
@@ -821,7 +817,7 @@ static func _execute_charge(state: Types.GameState, unit: Types.UnitState, param
 	new_unit.y = charge_dest.y
 
 	# Resolve melee as bouts (v17 core p.18)
-	var combat = _resolve_melee(new_unit, new_target, dice_results)
+	var combat = Combat.resolve_melee(new_unit, new_target, dice_results)
 	if combat["error"] != "":
 		result.error = combat["error"]
 		return result
@@ -1019,52 +1015,6 @@ static func _find_nearest_enemy(state: Types.GameState, unit: Types.UnitState) -
 
 
 # =============================================================================
-# COMBAT RESOLUTION HELPERS
-# =============================================================================
-
-## Thin wrappers — implementations live in game/combat.gd.
-static func _resolve_shooting_side(attacker: Types.UnitState, target: Types.UnitState, dice_results: Array, offset: int, inaccuracy_mod: int) -> Dictionary:
-	return Combat.resolve_shooting_side(attacker, target, dice_results, offset, inaccuracy_mod)
-
-
-static func _can_return_fire(target: Types.UnitState, shooter: Types.UnitState) -> bool:
-	return Combat.can_return_fire(target, shooter)
-
-
-## Resolve a shooting engagement (v17 core p.13). Both sides roll against
-## pre-engagement model counts — casualties from the primary strike do not
-## suppress return fire. Wounds, smoke, and hit-panic tokens applied after
-## both sides have rolled.
-##
-## Winner = side that dealt more unsaved wounds. Tie = no winner, no retreat
-## (caller still runs _execute_retreat only when winner/loser set).
-##
-## Returns {
-##   att_hits, att_saves, att_wounds,
-##   def_hits, def_saves, def_wounds,
-##   return_fire_fired: bool,
-##   winner_id, loser_id,           # "" on tie
-##   tie: bool,
-##   dice_used: int,
-##   error: String
-## }
-static func _resolve_shooting_engagement(attacker: Types.UnitState, target: Types.UnitState, dice_results: Array, attacker_inaccuracy_mod: int) -> Dictionary:
-	return Combat.resolve_shooting_engagement(attacker, target, dice_results, attacker_inaccuracy_mod)
-
-
-static func _resolve_bout_side(attacker: Types.UnitState, defender: Types.UnitState, dice_results: Array, offset: int) -> Dictionary:
-	return Combat.resolve_bout_side(attacker, defender, dice_results, offset)
-
-
-static func _melee_dice_budget(attacker: Types.UnitState, defender: Types.UnitState) -> int:
-	return Combat.melee_dice_budget(attacker, defender)
-
-
-static func _resolve_melee(attacker: Types.UnitState, target: Types.UnitState, dice_results: Array) -> Dictionary:
-	return Combat.resolve_melee(attacker, target, dice_results)
-
-
-# =============================================================================
 # VICTORY CONDITION
 # =============================================================================
 
@@ -1077,11 +1027,6 @@ static func check_victory(state: Types.GameState) -> Dictionary:
 # =============================================================================
 # HELPER FUNCTIONS
 # =============================================================================
-
-## Thin wrapper — implementation in game/combat.gd.
-static func _apply_wounds(unit: Types.UnitState, wounds: int) -> void:
-	Combat.apply_wounds(unit, wounds)
-
 
 ## Deep clone a GameState.
 static func _clone_state(state: Types.GameState) -> Types.GameState:

@@ -867,13 +867,13 @@ func _test_retreat() -> void:
 func _test_melee_bouts() -> void:
 	print("\n[Test Suite: Melee Bouts]")
 
-	# --- Direct _resolve_melee unit tests ---
+	# --- Direct Combat.resolve_melee unit tests ---
 
 	_test("melee: attacker kills defender in bout 1, no counter-attack", func():
 		var atk = _mock_unit("atk", 1, "Toff", "snob", 6, 2, 5, 2, 5, 6, 1)
 		var def = _mock_unit("def", 2, "Toff", "snob", 6, 2, 5, 2, 5, 6, 1)
 		# Attacker 2 attacks × 2 dice = 4 dice. [5,5,1,1] → 2 hits, 2 unsaved → defender dies.
-		var combat = GameEngine._resolve_melee(atk, def, [5, 5, 1, 1])
+		var combat = GameEngine.Combat.resolve_melee(atk, def, [5, 5, 1, 1])
 		return (combat["error"] == ""
 			and combat["bouts"].size() == 1
 			and combat["winner_id"] == "atk"
@@ -888,7 +888,7 @@ func _test_melee_bouts() -> void:
 		var atk = _mock_unit("atk", 1, "Toff", "snob", 6, 2, 5, 2, 5, 6, 1)
 		var def = _mock_unit("def", 2, "Toff", "snob", 6, 2, 5, 2, 5, 6, 1)
 		# Attacker [1,1,1,1] → 0 hits. Defender [5,5,1,1] → 2 unsaved → attacker dies.
-		var combat = GameEngine._resolve_melee(atk, def, [1, 1, 1, 1, 5, 5, 1, 1])
+		var combat = GameEngine.Combat.resolve_melee(atk, def, [1, 1, 1, 1, 5, 5, 1, 1])
 		return (combat["error"] == ""
 			and combat["bouts"].size() == 1
 			and combat["winner_id"] == "def"
@@ -902,7 +902,7 @@ func _test_melee_bouts() -> void:
 		var def = _mock_unit("def", 2, "Toff", "snob", 6, 2, 5, 2, 5, 6, 1)
 		# Bout 1: both whiff (0-0 tie). Bout 2: attacker kills.
 		var dice = [1, 1, 1, 1,   1, 1, 1, 1,   5, 5, 1, 1]
-		var combat = GameEngine._resolve_melee(atk, def, dice)
+		var combat = GameEngine.Combat.resolve_melee(atk, def, dice)
 		return (combat["error"] == ""
 			and combat["bouts"].size() == 2
 			and combat["winner_id"] == "atk"
@@ -918,9 +918,9 @@ func _test_melee_bouts() -> void:
 		var dice: Array = []
 		for i in range(24):
 			dice.append(1)
-		var combat = GameEngine._resolve_melee(atk, def, dice)
+		var combat = GameEngine.Combat.resolve_melee(atk, def, dice)
 		return (combat["error"] == ""
-			and combat["bouts"].size() == GameEngine.MELEE_MAX_BOUTS
+			and combat["bouts"].size() == Combat.MELEE_MAX_BOUTS
 			and combat["draw"]
 			and combat["winner_id"] == ""
 			and combat["loser_id"] == ""
@@ -932,7 +932,7 @@ func _test_melee_bouts() -> void:
 		var atk = _mock_unit("atk", 1, "Toff", "snob", 6, 2, 5, 2, 5, 6, 1)
 		var def = _mock_unit("def", 2, "Toff", "snob", 6, 2, 5, 2, 5, 6, 1)
 		def.is_dead = true
-		var combat = GameEngine._resolve_melee(atk, def, [])
+		var combat = GameEngine.Combat.resolve_melee(atk, def, [])
 		return combat["error"] != ""
 	)
 
@@ -940,7 +940,7 @@ func _test_melee_bouts() -> void:
 		var atk = _mock_unit("atk", 1, "Toff", "snob", 6, 2, 5, 2, 5, 6, 1)
 		var def = _mock_unit("def", 2, "Toff", "snob", 6, 2, 5, 2, 5, 6, 1)
 		# Attacker needs 4 dice, give it 2.
-		var combat = GameEngine._resolve_melee(atk, def, [5, 5])
+		var combat = GameEngine.Combat.resolve_melee(atk, def, [5, 5])
 		return combat["error"] != "" and "Not enough dice" in combat["error"]
 	)
 
@@ -1012,7 +1012,7 @@ func _test_melee_bouts() -> void:
 func _test_shooting_engagements() -> void:
 	print("\n[Test Suite: Shooting Engagements]")
 
-	# --- Direct _resolve_shooting_engagement tests ---
+	# --- Direct Combat.resolve_shooting_engagement tests ---
 
 	_test("engagement: return fire fires when target in range with weapon", func():
 		var atk = _mock_unit("atk", 1, "Toff", "snob", 6, 2, 5, 2, 5, 18, 1)
@@ -1020,7 +1020,7 @@ func _test_shooting_engagements() -> void:
 		atk.x = 10; atk.y = 10
 		dfn.x = 15; dfn.y = 10  # within 18
 		# Attacker [5,1] hits + wounds (I5+, V5). Defender [5,1] same.
-		var combat = GameEngine._resolve_shooting_engagement(atk, dfn, [5, 1, 5, 1], 0)
+		var combat = GameEngine.Combat.resolve_shooting_engagement(atk, dfn, [5, 1, 5, 1], 0)
 		return (combat["error"] == ""
 			and combat["return_fire_fired"]
 			and combat["att_hits"] == 1 and combat["att_wounds"] == 1
@@ -1035,7 +1035,7 @@ func _test_shooting_engagements() -> void:
 		atk.x = 10; atk.y = 10
 		dfn.x = 15; dfn.y = 10
 		dfn.has_powder_smoke = true
-		var combat = GameEngine._resolve_shooting_engagement(atk, dfn, [5, 1], 0)
+		var combat = GameEngine.Combat.resolve_shooting_engagement(atk, dfn, [5, 1], 0)
 		return (combat["error"] == ""
 			and not combat["return_fire_fired"]
 			and combat["att_wounds"] == 1
@@ -1051,7 +1051,7 @@ func _test_shooting_engagements() -> void:
 		atk.x = 10; atk.y = 10
 		dfn.x = 20; dfn.y = 10
 		atk.base_stats.weapon_range = 18
-		var combat = GameEngine._resolve_shooting_engagement(atk, dfn, [5, 1], 0)
+		var combat = GameEngine.Combat.resolve_shooting_engagement(atk, dfn, [5, 1], 0)
 		return (combat["error"] == ""
 			and not combat["return_fire_fired"]
 			and combat["winner_id"] == "atk")
@@ -1062,7 +1062,7 @@ func _test_shooting_engagements() -> void:
 		var dfn = _mock_unit("dfn", 2, "Brutes", "infantry", 6, 2, 5, 2, 5, 0, 1)
 		atk.x = 10; atk.y = 10
 		dfn.x = 12; dfn.y = 10
-		var combat = GameEngine._resolve_shooting_engagement(atk, dfn, [5, 1], 0)
+		var combat = GameEngine.Combat.resolve_shooting_engagement(atk, dfn, [5, 1], 0)
 		return combat["error"] == "" and not combat["return_fire_fired"]
 	)
 
@@ -1078,7 +1078,7 @@ func _test_shooting_engagements() -> void:
 		# should not reduce the pool.
 		var dice = [5, 5, 5, 5, 1, 1, 1, 1,   # attacker 4 hits, 4 wounds
 					5, 5, 5, 1, 1, 1]          # defender 3 hits (I5+), 3 wounds
-		var combat = GameEngine._resolve_shooting_engagement(atk, dfn, dice, 0)
+		var combat = GameEngine.Combat.resolve_shooting_engagement(atk, dfn, dice, 0)
 		return (combat["error"] == ""
 			and combat["return_fire_fired"]
 			and combat["att_hits"] == 4 and combat["att_wounds"] == 4
@@ -1095,7 +1095,7 @@ func _test_shooting_engagements() -> void:
 		var dfn = _mock_unit("dfn", 2, "Toff", "snob", 6, 2, 5, 2, 5, 18, 1)
 		atk.x = 10; atk.y = 10
 		dfn.x = 15; dfn.y = 10
-		var combat = GameEngine._resolve_shooting_engagement(atk, dfn, [5, 1, 1, 1], 0)
+		var combat = GameEngine.Combat.resolve_shooting_engagement(atk, dfn, [5, 1, 1, 1], 0)
 		return (combat["error"] == ""
 			and combat["winner_id"] == "atk"
 			and combat["loser_id"] == "dfn"
@@ -1107,7 +1107,7 @@ func _test_shooting_engagements() -> void:
 		var dfn = _mock_unit("dfn", 2, "Toff", "snob", 6, 2, 5, 2, 5, 18, 1)
 		atk.x = 10; atk.y = 10
 		dfn.x = 15; dfn.y = 10
-		var combat = GameEngine._resolve_shooting_engagement(atk, dfn, [1, 1, 5, 1], 0)
+		var combat = GameEngine.Combat.resolve_shooting_engagement(atk, dfn, [1, 1, 5, 1], 0)
 		return (combat["error"] == ""
 			and combat["winner_id"] == "dfn"
 			and combat["loser_id"] == "atk"
@@ -1119,7 +1119,7 @@ func _test_shooting_engagements() -> void:
 		var dfn = _mock_unit("dfn", 2, "Toff", "snob", 6, 2, 5, 2, 5, 18, 1)
 		atk.x = 10; atk.y = 10
 		dfn.x = 15; dfn.y = 10
-		var combat = GameEngine._resolve_shooting_engagement(atk, dfn, [1, 1, 1, 1], 0)
+		var combat = GameEngine.Combat.resolve_shooting_engagement(atk, dfn, [1, 1, 1, 1], 0)
 		return (combat["error"] == ""
 			and combat["tie"]
 			and combat["winner_id"] == "" and combat["loser_id"] == "")
@@ -1129,7 +1129,7 @@ func _test_shooting_engagements() -> void:
 		var atk = _mock_unit("atk", 1, "Toff", "snob", 6, 2, 5, 2, 5, 18, 1)
 		var dfn = _mock_unit("dfn", 2, "Toff", "snob", 6, 2, 5, 2, 5, 18, 1)
 		dfn.is_dead = true
-		var combat = GameEngine._resolve_shooting_engagement(atk, dfn, [], 0)
+		var combat = GameEngine.Combat.resolve_shooting_engagement(atk, dfn, [], 0)
 		return combat["error"] != ""
 	)
 
