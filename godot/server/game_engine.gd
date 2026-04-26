@@ -15,9 +15,11 @@ extends RefCounted
 ##   6. Round ends, advance to next round
 
 # Board geometry, distance, and move validation live in game/board.gd.
-# Preloaded (not class_name) so headless test runs don't depend on the
-# global script class cache being up to date.
+# Targeting (LoS, valid-target enumeration, charge contact) lives in
+# game/targeting.gd. Preloaded (not class_name) so headless test runs
+# don't depend on the global script class cache being up to date.
 const Board = preload("res://game/board.gd")
+const Targeting = preload("res://game/targeting.gd")
 
 # Re-exported constants so existing GameEngine.BOARD_WIDTH etc. callers in
 # the server still compile during the staged module split.
@@ -1581,171 +1583,26 @@ static func check_victory(state: Types.GameState) -> Dictionary:
 # LINE OF SIGHT + TARGETING
 # =============================================================================
 
-## Supercover line-of-sight check between two grid cells.
-## Returns true if no alive non-Snob unit (except the two endpoints) occupies
-## any cell the line passes through. Snobs never block LoS (v17 p.5).
-## Both endpoints are excluded from the blocker check.
+## Thin wrappers — implementations live in game/targeting.gd. Removed in a
+## follow-up once internal callers move to Targeting.* directly.
 static func _has_line_of_sight(state: Types.GameState, from_x: int, from_y: int, to_x: int, to_y: int) -> bool:
-	# Build a set of occupied cells that block LoS (alive non-Snob Followers).
-	# Exclude the two endpoint cells.
-	var blockers: Dictionary = {}  # "x,y" -> true
-	for u in state.units:
-		if u.is_dead or u.is_snob():
-			continue
-		if u.x < 0 or u.y < 0:
-			continue
-		if (u.x == from_x and u.y == from_y) or (u.x == to_x and u.y == to_y):
-			continue
-		blockers["%d,%d" % [u.x, u.y]] = true
-
-	if blockers.is_empty():
-		return true
-
-	# Supercover line walk: enumerate every cell the line from center of
-	# (from_x, from_y) to center of (to_x, to_y) touches or crosses.
-	var dx: int = to_x - from_x
-	var dy: int = to_y - from_y
-	var sx: int = 1 if dx > 0 else (-1 if dx < 0 else 0)
-	var sy: int = 1 if dy > 0 else (-1 if dy < 0 else 0)
-	var adx: int = abs(dx)
-	var ady: int = abs(dy)
-
-	var cx: int = from_x
-	var cy: int = from_y
-
-	# Use a modified Bresenham for supercover (checks diagonal-adjacent cells).
-	# error tracks which axis to step. When error triggers both, step diag and
-	# also check the two axis-only neighbors for coverage.
-	var error: int = adx - ady
-
-	var steps: int = adx + ady
-	for _i in range(steps):
-		var e2: int = 2 * error
-		if e2 > -ady and e2 < adx:
-			# Diagonal step — supercover: check both axis-adjacent cells too
-			if blockers.has("%d,%d" % [cx + sx, cy]):
-				return false
-			if blockers.has("%d,%d" % [cx, cy + sy]):
-				return false
-			cx += sx
-			cy += sy
-			error += -ady + adx
-		elif e2 > -ady:
-			cx += sx
-			error -= ady
-		else:
-			cy += sy
-			error += adx
-
-		# Skip endpoint
-		if cx == to_x and cy == to_y:
-			break
-		if blockers.has("%d,%d" % [cx, cy]):
-			return false
-
-	return true
+	return Targeting.has_line_of_sight(state, from_x, from_y, to_x, to_y)
 
 
-## Find all valid shooting targets for a unit: alive enemies in weapon range
-## with line of sight.
 static func _find_shooting_targets(state: Types.GameState, shooter: Types.UnitState) -> Array:
-	var targets: Array = []
-	var wr: int = shooter.base_stats.weapon_range
-	if wr <= 0:
-		return targets
-	for u in state.units:
-		if u.is_dead or u.owner_seat == shooter.owner_seat:
-			continue
-		if u.x < 0 or u.y < 0:
-			continue
-		var d := _grid_distance(shooter.x, shooter.y, u.x, u.y)
-		if d <= wr and _has_line_of_sight(state, shooter.x, shooter.y, u.x, u.y):
-			targets.append(u)
-	return targets
+	return Targeting.find_shooting_targets(state, shooter)
 
 
-## Find shooting targets from an arbitrary position (for move_and_shoot post-move).
 static func _find_shooting_targets_from(state: Types.GameState, shooter: Types.UnitState, from_x: int, from_y: int) -> Array:
-	var targets: Array = []
-	var wr: int = shooter.base_stats.weapon_range
-	if wr <= 0:
-		return targets
-	for u in state.units:
-		if u.is_dead or u.owner_seat == shooter.owner_seat:
-			continue
-		if u.x < 0 or u.y < 0:
-			continue
-		var d := _grid_distance(from_x, from_y, u.x, u.y)
-		if d <= wr and _has_line_of_sight(state, from_x, from_y, u.x, u.y):
-			targets.append(u)
-	return targets
+	return Targeting.find_shooting_targets_from(state, shooter, from_x, from_y)
 
 
-## Validate whether a specific target is legal for shooting.
-## Returns empty string if valid, error string if not.
-## Enforces closest-target rule (v17 p.12): must target the closest valid
-## enemy in range + LoS (ties are permissive — any tied target is legal).
-## Sharpshooters bypass the closest-target restriction but still need LoS.
 static func _is_valid_shooting_target(state: Types.GameState, shooter: Types.UnitState, target: Types.UnitState) -> String:
-	if target.is_dead:
-		return "Target is dead"
-	if target.owner_seat == shooter.owner_seat:
-		return "Cannot target your own units"
-
-	var distance := _grid_distance(shooter.x, shooter.y, target.x, target.y)
-	if distance > shooter.base_stats.weapon_range:
-		return "Target out of range (max %d)" % shooter.base_stats.weapon_range
-
-	if not _has_line_of_sight(state, shooter.x, shooter.y, target.x, target.y):
-		return "No line of sight to target"
-
-	# Closest-target enforcement (skip for Sharpshooters)
-	if "sharpshooters" not in shooter.special_rules:
-		var valid_targets := _find_shooting_targets(state, shooter)
-		if valid_targets.is_empty():
-			return "No valid targets in range with LoS"
-		# Find the minimum distance among valid targets
-		var min_dist: float = 99999.0
-		for vt in valid_targets:
-			var vd := _grid_distance(shooter.x, shooter.y, vt.x, vt.y)
-			if vd < min_dist:
-				min_dist = vd
-		# Target must be among the closest (ties allowed)
-		if distance > min_dist + 0.01:  # small epsilon for float comparison
-			return "Must target closest enemy (closest is at %.1f, target is at %.1f)" % [min_dist, distance]
-
-	return ""
+	return Targeting.is_valid_shooting_target(state, shooter, target)
 
 
-## Same as _is_valid_shooting_target but checks LoS from an arbitrary position
-## (for move_and_shoot post-move validation).
 static func _is_valid_shooting_target_from(state: Types.GameState, shooter: Types.UnitState, target: Types.UnitState, from_x: int, from_y: int) -> String:
-	if target.is_dead:
-		return "Target is dead"
-	if target.owner_seat == shooter.owner_seat:
-		return "Cannot target your own units"
-
-	var distance := _grid_distance(from_x, from_y, target.x, target.y)
-	if distance > shooter.base_stats.weapon_range:
-		return "Target out of range (max %d)" % shooter.base_stats.weapon_range
-
-	if not _has_line_of_sight(state, from_x, from_y, target.x, target.y):
-		return "No line of sight to target"
-
-	# Closest-target enforcement (skip for Sharpshooters)
-	if "sharpshooters" not in shooter.special_rules:
-		var valid_targets := _find_shooting_targets_from(state, shooter, from_x, from_y)
-		if valid_targets.is_empty():
-			return "No valid targets in range with LoS"
-		var min_dist: float = 99999.0
-		for vt in valid_targets:
-			var vd := _grid_distance(from_x, from_y, vt.x, vt.y)
-			if vd < min_dist:
-				min_dist = vd
-		if distance > min_dist + 0.01:
-			return "Must target closest enemy (closest is at %.1f, target is at %.1f)" % [min_dist, distance]
-
-	return ""
+	return Targeting.is_valid_shooting_target_from(state, shooter, target, from_x, from_y)
 
 
 # =============================================================================
@@ -1890,30 +1747,6 @@ static func _resolve_objective_captures(state: Types.GameState) -> void:
 		# until enemy contests or claims it).
 
 
-## Find the best adjacent cell to a target for a charging unit.
+## Thin wrapper — implementation in game/targeting.gd.
 static func _find_adjacent_cell(state: Types.GameState, charger: Types.UnitState, target: Types.UnitState) -> Vector2i:
-	var best = Vector2i(-1, -1)
-	var best_dist = 9999
-
-	for offset in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
-		var cx = target.x + offset.x
-		var cy = target.y + offset.y
-		if cx < 0 or cx >= BOARD_WIDTH or cy < 0 or cy >= BOARD_HEIGHT:
-			continue
-		# Check not occupied (except by charger itself)
-		var occupied = false
-		for u in state.units:
-			if not u.is_dead and u.x == cx and u.y == cy and u.id != charger.id:
-				occupied = true
-				break
-		if occupied:
-			continue
-		# Objective cells are invalid end-of-move destinations (v17 p.22).
-		if _is_objective_at(state, cx, cy):
-			continue
-		var dist = _grid_distance(charger.x, charger.y, cx, cy)
-		if dist < best_dist:
-			best_dist = dist
-			best = Vector2i(cx, cy)
-
-	return best
+	return Targeting.find_adjacent_cell(state, charger, target)
