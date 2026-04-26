@@ -500,7 +500,7 @@ static func _execute_volley_fire(state: Types.GameState, unit: Types.UnitState, 
 	if not combat["tie"] and combat["loser_id"] != "":
 		var loser = _find_unit(new_state, combat["loser_id"])
 		if loser and not loser.is_dead:
-			retreat = _execute_retreat(new_state, combat["loser_id"], retreat_die)
+			retreat = Panic.execute_retreat(new_state, combat["loser_id"], retreat_die)
 
 	_advance_after_order(new_state)
 
@@ -613,7 +613,7 @@ static func _execute_move_and_shoot(state: Types.GameState, unit: Types.UnitStat
 				if not combat["tie"] and combat["loser_id"] != "":
 					var loser = _find_unit(new_state, combat["loser_id"])
 					if loser and not loser.is_dead:
-						retreat = _execute_retreat(new_state, combat["loser_id"], retreat_die)
+						retreat = Panic.execute_retreat(new_state, combat["loser_id"], retreat_die)
 
 	_advance_after_order(new_state)
 
@@ -765,14 +765,14 @@ static func _execute_charge(state: Types.GameState, unit: Types.UnitState, param
 	var panic_die: int = params.get("panic_die", 1)
 	var fearless_die: int = params.get("fearless_die", 1)
 	var retreat_die: int = params.get("retreat_die", 1)
-	var panic = _panic_test(new_target, panic_die, fearless_die)
+	var panic = Panic.panic_test(new_target, panic_die, fearless_die)
 
 	if not panic["passed"]:
 		# Target failed panic test — gains +1 panic token (v17 p.19),
 		# then retreats away from nearest enemy. Charger moves to the
 		# now-vacated adjacent cell. No melee.
 		new_target.panic_tokens = mini(new_target.panic_tokens + 1, 6)
-		var retreat = _execute_retreat(new_state, target_id, retreat_die)
+		var retreat = Panic.execute_retreat(new_state, target_id, retreat_die)
 
 		# Charger advances to adjacent cell (target may have vacated it,
 		# or stayed put if Stubborn Fanatics).
@@ -834,7 +834,7 @@ static func _execute_charge(state: Types.GameState, unit: Types.UnitState, param
 	if not combat["draw"] and combat["loser_id"] != "":
 		var loser = _find_unit(new_state, combat["loser_id"])
 		if loser and not loser.is_dead:
-			retreat = _execute_retreat(new_state, combat["loser_id"], retreat_die)
+			retreat = Panic.execute_retreat(new_state, combat["loser_id"], retreat_die)
 			if combat["loser_id"] == new_unit.id:
 				charger_retreated = true
 
@@ -986,32 +986,6 @@ static func _end_round(state: Types.GameState) -> void:
 		"round": state.current_round - 1,
 		"action": "round_ended"
 	})
-
-
-# =============================================================================
-# PANIC TEST
-# =============================================================================
-
-## Thin wrappers — implementations live in game/panic.gd.
-static func _is_fearless(unit: Types.UnitState) -> bool:
-	return Panic.is_fearless(unit)
-
-
-static func _panic_test(unit: Types.UnitState, panic_die: int, fearless_die: int) -> Dictionary:
-	return Panic.panic_test(unit, panic_die, fearless_die)
-
-
-# =============================================================================
-# RETREAT
-# =============================================================================
-
-## Thin wrappers — implementations live in game/panic.gd.
-static func _execute_retreat(state: Types.GameState, unit_id: String, retreat_die: int) -> Dictionary:
-	return Panic.execute_retreat(state, unit_id, retreat_die)
-
-
-static func _find_nearest_enemy(state: Types.GameState, unit: Types.UnitState) -> Types.UnitState:
-	return Panic.find_nearest_enemy(state, unit)
 
 
 # =============================================================================

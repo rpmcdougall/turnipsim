@@ -635,28 +635,28 @@ func _test_panic_test() -> void:
 	_test("panic_test: 0 tokens auto-passes", func():
 		var unit = _mock_unit("u0", 1, "Fodder", "infantry", 6, 1, 6, 1, 6, 0, 12)
 		unit.panic_tokens = 0
-		var result = GameEngine._panic_test(unit, 6, 1)
+		var result = GameEngine.Panic.panic_test(unit, 6, 1)
 		return result["passed"] and result["auto_passed"]
 	)
 
 	_test("panic_test: natural 1 always passes regardless of tokens", func():
 		var unit = _mock_unit("u0", 1, "Fodder", "infantry", 6, 1, 6, 1, 6, 0, 12)
 		unit.panic_tokens = 6  # max tokens, but die=1 → pass
-		var result = GameEngine._panic_test(unit, 1, 1)
+		var result = GameEngine.Panic.panic_test(unit, 1, 1)
 		return result["passed"] and not result["auto_passed"]
 	)
 
 	_test("panic_test: D6 + tokens <= 6 passes", func():
 		var unit = _mock_unit("u0", 1, "Fodder", "infantry", 6, 1, 6, 1, 6, 0, 12)
 		unit.panic_tokens = 3  # die=3, total=6 ≤ 6 → pass
-		var result = GameEngine._panic_test(unit, 3, 1)
+		var result = GameEngine.Panic.panic_test(unit, 3, 1)
 		return result["passed"] and result["total"] == 6
 	)
 
 	_test("panic_test: D6 + tokens >= 7 fails", func():
 		var unit = _mock_unit("u0", 1, "Fodder", "infantry", 6, 1, 6, 1, 6, 0, 12)
 		unit.panic_tokens = 3  # die=4, total=7 ≥ 7 → fail
-		var result = GameEngine._panic_test(unit, 4, 1)
+		var result = GameEngine.Panic.panic_test(unit, 4, 1)
 		return not result["passed"] and result["total"] == 7
 	)
 
@@ -665,7 +665,7 @@ func _test_panic_test() -> void:
 		var rules: Array[String] = ["fearless"]
 		var unit = Types.UnitState.new("u0", 1, "Brutes", "infantry", 6, 6, stats, "black_powder", rules)
 		unit.panic_tokens = 4  # die=5, total=9 → fail, but Fearless 3+ saves
-		var result = GameEngine._panic_test(unit, 5, 3)
+		var result = GameEngine.Panic.panic_test(unit, 5, 3)
 		return result["passed"] and result["fearless_override"] and result["used_fearless"]
 	)
 
@@ -674,7 +674,7 @@ func _test_panic_test() -> void:
 		var rules: Array[String] = ["fearless"]
 		var unit = Types.UnitState.new("u0", 1, "Brutes", "infantry", 6, 6, stats, "black_powder", rules)
 		unit.panic_tokens = 4  # die=5, total=9 → fail, Fearless die=2 → still fails
-		var result = GameEngine._panic_test(unit, 5, 2)
+		var result = GameEngine.Panic.panic_test(unit, 5, 2)
 		return not result["passed"] and result["used_fearless"] and not result["fearless_override"]
 	)
 
@@ -683,7 +683,7 @@ func _test_panic_test() -> void:
 		var rules: Array[String] = ["safety_in_numbers"]
 		var unit = Types.UnitState.new("u0", 1, "Fodder", "infantry", 8, 12, stats, "black_powder", rules)
 		unit.panic_tokens = 4
-		var result = GameEngine._panic_test(unit, 5, 4)  # total=9, Fearless die=4 → override
+		var result = GameEngine.Panic.panic_test(unit, 5, 4)  # total=9, Fearless die=4 → override
 		return result["passed"] and result["fearless_override"]
 	)
 
@@ -692,7 +692,7 @@ func _test_panic_test() -> void:
 		var rules: Array[String] = ["safety_in_numbers"]
 		var unit = Types.UnitState.new("u0", 1, "Fodder", "infantry", 7, 12, stats, "black_powder", rules)
 		unit.panic_tokens = 4
-		var result = GameEngine._panic_test(unit, 5, 4)  # total=9, but not Fearless → fails
+		var result = GameEngine.Panic.panic_test(unit, 5, 4)  # total=9, but not Fearless → fails
 		return not result["passed"] and not result["used_fearless"]
 	)
 
@@ -777,7 +777,7 @@ func _test_retreat() -> void:
 		state.units[2].x = 20; state.units[2].y = 15
 		state.units[2].panic_tokens = 3
 		state.units[1].x = 15; state.units[1].y = 15  # nearest enemy
-		var result = GameEngine._execute_retreat(state, state.units[2].id, 3)
+		var result = GameEngine.Panic.execute_retreat(state, state.units[2].id, 3)
 		return (result["retreated"]
 			and result["distance"] == 9
 			and state.units[2].x == 29
@@ -791,7 +791,7 @@ func _test_retreat() -> void:
 		state.units[2].x = 20; state.units[2].y = 20
 		state.units[2].panic_tokens = 2
 		state.units[1].x = 17; state.units[1].y = 17
-		var result = GameEngine._execute_retreat(state, state.units[2].id, 1)
+		var result = GameEngine.Panic.execute_retreat(state, state.units[2].id, 1)
 		return (result["retreated"]
 			and state.units[2].x == 24
 			and state.units[2].y == 24)
@@ -803,7 +803,7 @@ func _test_retreat() -> void:
 		state.units[2].x = 20; state.units[2].y = 15
 		state.units[2].panic_tokens = 0
 		state.units[1].x = 15; state.units[1].y = 15
-		var result = GameEngine._execute_retreat(state, state.units[2].id, 4)
+		var result = GameEngine.Panic.execute_retreat(state, state.units[2].id, 4)
 		return (result["retreated"]
 			and result["distance"] == 4
 			and state.units[2].x == 24)
@@ -816,7 +816,7 @@ func _test_retreat() -> void:
 		state.units[2].x = 46; state.units[2].y = 15
 		state.units[2].panic_tokens = 3
 		state.units[1].x = 44; state.units[1].y = 15
-		var result = GameEngine._execute_retreat(state, state.units[2].id, 1)
+		var result = GameEngine.Panic.execute_retreat(state, state.units[2].id, 1)
 		return (result["retreated"]
 			and result["destroyed"]
 			and state.units[2].is_dead
@@ -832,7 +832,7 @@ func _test_retreat() -> void:
 		stump.panic_tokens = 4
 		state.units.append(stump)
 		state.units[1].x = 15; state.units[1].y = 15
-		var result = GameEngine._execute_retreat(state, "stump", 6)
+		var result = GameEngine.Panic.execute_retreat(state, "stump", 6)
 		return (result["stubborn_held"]
 			and not result["retreated"]
 			and stump.x == 20 and stump.y == 15)
@@ -846,7 +846,7 @@ func _test_retreat() -> void:
 		state.units[2].panic_tokens = 1
 		state.units[1].x = 18; state.units[1].y = 15
 		state.units[3].x = 23; state.units[3].y = 15  # blocker at ideal dest
-		var result = GameEngine._execute_retreat(state, state.units[2].id, 1)
+		var result = GameEngine.Panic.execute_retreat(state, state.units[2].id, 1)
 		return (result["retreated"]
 			and (state.units[2].x != 23 or state.units[2].y != 15))
 	)
@@ -857,7 +857,7 @@ func _test_retreat() -> void:
 		state.units[2].x = 20; state.units[2].y = 15
 		state.units[2].panic_tokens = 0
 		state.units[1].x = 15; state.units[1].y = 15
-		var result = GameEngine._execute_retreat(state, state.units[2].id, 6)
+		var result = GameEngine.Panic.execute_retreat(state, state.units[2].id, 6)
 		return (result["retreated"]
 			and result["distance"] == 6
 			and state.units[2].x == 26)
