@@ -483,28 +483,30 @@ class GameState extends RefCounted:
 
 ## Result of an engine operation.
 class EngineResult extends RefCounted:
-	var success: bool = false
+	## Outcome of a single engine call. `error.is_empty()` IS success — there
+	## is no separate boolean. The previous redundant `success` field made it
+	## possible to set one without the other and was a contract trap.
 	var error: String = ""
 	var new_state: GameState = null
 	var dice_rolled: Array = []
 	var description: String = ""
 
 	func _init(
-		p_success: bool = false,
 		p_error: String = "",
 		p_new_state: GameState = null,
 		p_dice_rolled: Array = [],
 		p_description: String = ""
 	) -> void:
-		success = p_success
 		error = p_error
 		new_state = p_new_state
 		dice_rolled = p_dice_rolled
 		description = p_description
 
+	func is_success() -> bool:
+		return error.is_empty()
+
 	func to_dict() -> Dictionary:
 		return {
-			"success": success,
 			"error": error,
 			"new_state": new_state.to_dict() if new_state else {},
 			"dice_rolled": dice_rolled,

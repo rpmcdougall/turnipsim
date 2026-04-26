@@ -112,7 +112,6 @@ static func place_unit(state: Types.GameState, unit_id: String, x: int, y: int) 
 		"y": y
 	})
 
-	result.success = true
 	result.new_state = new_state
 	result.description = "%s placed at (%d, %d)" % [unit.unit_type, x, y]
 
@@ -165,7 +164,6 @@ static func confirm_placement(state: Types.GameState) -> Types.EngineResult:
 		})
 		result.description = "Player %d placement confirmed. Player %d's turn." % [state.active_seat, other_seat]
 
-	result.success = true
 	result.new_state = new_state
 
 	return result
@@ -215,7 +213,6 @@ static func select_snob(state: Types.GameState, snob_id: String) -> Types.Engine
 		"snob_type": snob.unit_type
 	})
 
-	result.success = true
 	result.new_state = new_state
 	result.description = "%s Made Ready" % snob.unit_type
 
@@ -331,7 +328,6 @@ static func declare_order(state: Types.GameState, unit_id: String, order_type: S
 		"move_bonus": move_bonus
 	})
 
-	result.success = true
 	result.new_state = new_state
 	result.dice_rolled = [blunder_die] + move_dice
 	result.description = "%s ordered to %s%s (move bonus: +%d)" % [
@@ -421,7 +417,6 @@ static func declare_self_order(state: Types.GameState, unit_id: String, order_ty
 		"move_bonus": move_bonus
 	})
 
-	result.success = true
 	result.new_state = new_state
 	result.dice_rolled = [blunder_die] + move_dice
 	var blunder_text = " [BLUNDERED!]" if blundered else ""
@@ -490,7 +485,6 @@ static func _execute_volley_fire(state: Types.GameState, unit: Types.UnitState, 
 			"unit_type": unit.unit_type,
 			"blundered": state.current_order_blundered
 		})
-		result.success = true
 		result.new_state = fizzled_state
 		result.description = "%s volley fire fizzled (no targets in range)" % unit.unit_type
 		return result
@@ -551,7 +545,6 @@ static func _execute_volley_fire(state: Types.GameState, unit: Types.UnitState, 
 		"retreat": retreat,
 	})
 
-	result.success = true
 	result.new_state = new_state
 	result.dice_rolled = dice_results
 	var blunder_text = " (blundered, no bonus)" if state.current_order_blundered else " (-1 Inaccuracy)"
@@ -665,7 +658,6 @@ static func _execute_move_and_shoot(state: Types.GameState, unit: Types.UnitStat
 		"retreat": retreat,
 	})
 
-	result.success = true
 	result.new_state = new_state
 	result.dice_rolled = dice_results
 	var shoot_text = ""
@@ -718,7 +710,6 @@ static func _execute_march(state: Types.GameState, unit: Types.UnitState, params
 		"blundered": state.current_order_blundered
 	})
 
-	result.success = true
 	result.new_state = new_state
 	result.description = "March! %s to (%d,%d) (M%d + %d)" % [
 		unit.unit_type, x, y, unit.base_stats.movement, state.current_order_move_bonus
@@ -745,7 +736,6 @@ static func _execute_charge(state: Types.GameState, unit: Types.UnitState, param
 			"unit_type": unit.unit_type,
 			"blundered": state.current_order_blundered
 		})
-		result.success = true
 		result.new_state = fizzled_state
 		result.description = "%s charge fizzled (no targets in range)" % unit.unit_type
 		return result
@@ -826,7 +816,6 @@ static func _execute_charge(state: Types.GameState, unit: Types.UnitState, param
 			"hits": 0, "saves": 0, "unsaved_wounds": 0
 		})
 
-		result.success = true
 		result.new_state = new_state
 		result.dice_rolled = [panic_die, fearless_die]
 		var retreat_text = ""
@@ -903,7 +892,6 @@ static func _execute_charge(state: Types.GameState, unit: Types.UnitState, param
 		"counter_unsaved_wounds": def_wounds_total,
 	})
 
-	result.success = true
 	result.new_state = new_state
 	result.dice_rolled = [panic_die, fearless_die] + dice_results
 	var panic_text = ""

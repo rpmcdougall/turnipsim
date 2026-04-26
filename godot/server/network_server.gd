@@ -308,7 +308,7 @@ func request_action(action_data: Dictionary) -> void:
 			_send_error_to_client(peer_id, "Unknown action type: " + action_type)
 			return
 
-	if not result.success:
+	if not result.is_success():
 		_send_error_to_client(peer_id, result.error)
 		return
 
