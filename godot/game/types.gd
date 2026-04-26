@@ -96,7 +96,7 @@ class UnitDef extends RefCounted:
 		category = p_category
 		model_count = p_model_count
 		base_stats = p_base_stats if p_base_stats else Stats.new()
-		special_rules = p_special_rules
+		special_rules = p_special_rules.duplicate()
 		allowed_equipment = p_allowed_equipment
 		description = p_description
 
@@ -274,7 +274,7 @@ class UnitState extends RefCounted:
 		max_models = p_max_models
 		base_stats = p_base_stats if p_base_stats else Stats.new()
 		equipment = p_equipment
-		special_rules = p_special_rules
+		special_rules = p_special_rules.duplicate()
 		panic_tokens = p_panic_tokens
 		has_powder_smoke = p_has_powder_smoke
 		current_wounds = p_current_wounds
@@ -452,7 +452,8 @@ class GameState extends RefCounted:
 
 		var action_log_array: Array[Dictionary] = []
 		if data.has("action_log"):
-			action_log_array.assign(data["action_log"])
+			for entry in data["action_log"]:
+				action_log_array.append((entry as Dictionary).duplicate(true))
 
 		var gs = GameState.new(
 			data.get("room_code", ""),
@@ -482,28 +483,30 @@ class GameState extends RefCounted:
 
 ## Result of an engine operation.
 class EngineResult extends RefCounted:
-	var success: bool = false
+	## Outcome of a single engine call. `error.is_empty()` IS success — there
+	## is no separate boolean. The previous redundant `success` field made it
+	## possible to set one without the other and was a contract trap.
 	var error: String = ""
 	var new_state: GameState = null
 	var dice_rolled: Array = []
 	var description: String = ""
 
 	func _init(
-		p_success: bool = false,
 		p_error: String = "",
 		p_new_state: GameState = null,
 		p_dice_rolled: Array = [],
 		p_description: String = ""
 	) -> void:
-		success = p_success
 		error = p_error
 		new_state = p_new_state
 		dice_rolled = p_dice_rolled
 		description = p_description
 
+	func is_success() -> bool:
+		return error.is_empty()
+
 	func to_dict() -> Dictionary:
 		return {
-			"success": success,
 			"error": error,
 			"new_state": new_state.to_dict() if new_state else {},
 			"dice_rolled": dice_rolled,

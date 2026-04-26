@@ -3,6 +3,11 @@ extends SceneTree
 ##
 ## Run with: godot --headless -s tests/test_game_engine.gd
 
+const Targeting = preload("res://game/targeting.gd")
+const Combat = preload("res://game/combat.gd")
+const Panic = preload("res://game/panic.gd")
+const Objectives = preload("res://game/objectives.gd")
+
 var _tests_passed: int = 0
 var _tests_failed: int = 0
 
@@ -57,7 +62,7 @@ func _test_placement_phase() -> void:
 
 		var result = GameEngine.place_unit(state, unit.id, 10, 30)
 
-		return result.success and result.new_state.units[0].x == 10 and result.new_state.units[0].y == 30
+		return result.is_success() and result.new_state.units[0].x == 10 and result.new_state.units[0].y == 30
 	)
 
 	_test("Reject placement outside deployment zone", func():
@@ -66,7 +71,7 @@ func _test_placement_phase() -> void:
 
 		var result = GameEngine.place_unit(state, unit.id, 10, 15)
 
-		return not result.success and "deployment zone" in result.error
+		return not result.is_success() and "deployment zone" in result.error
 	)
 
 	_test("Reject placement on occupied position", func():
@@ -78,7 +83,7 @@ func _test_placement_phase() -> void:
 
 		var result = GameEngine.place_unit(state, state.units[3].id, 10, 2)
 
-		return not result.success and "occupied" in result.error
+		return not result.is_success() and "occupied" in result.error
 	)
 
 	_test("Confirm placement starts orders when both done", func():
@@ -86,7 +91,7 @@ func _test_placement_phase() -> void:
 
 		var result = GameEngine.confirm_placement(state)
 
-		return (result.success
+		return (result.is_success()
 			and result.new_state.phase == "orders"
 			and result.new_state.order_phase == "snob_select")
 	)
@@ -99,7 +104,7 @@ func _test_snob_selection() -> void:
 		var state = _mock_orders_state()
 		var result = GameEngine.select_snob(state, state.units[0].id)
 
-		return (result.success
+		return (result.is_success()
 			and result.new_state.order_phase == "order_declare"
 			and result.new_state.current_snob_id == state.units[0].id)
 	)
@@ -108,14 +113,14 @@ func _test_snob_selection() -> void:
 		var state = _mock_orders_state()
 		var result = GameEngine.select_snob(state, state.units[2].id)
 
-		return not result.success and "not a Snob" in result.error
+		return not result.is_success() and "not a Snob" in result.error
 	)
 
 	_test("select_snob: reject enemy Snob", func():
 		var state = _mock_orders_state()
 		var result = GameEngine.select_snob(state, state.units[1].id)
 
-		return not result.success and "Not your Snob" in result.error
+		return not result.is_success() and "Not your Snob" in result.error
 	)
 
 	_test("select_snob: reject already-ordered Snob", func():
@@ -124,7 +129,7 @@ func _test_snob_selection() -> void:
 
 		var result = GameEngine.select_snob(state, state.units[0].id)
 
-		return not result.success and "already ordered" in result.error
+		return not result.is_success() and "already ordered" in result.error
 	)
 
 	_test("select_snob: reject outside snob_select phase", func():
@@ -133,7 +138,7 @@ func _test_snob_selection() -> void:
 
 		var result = GameEngine.select_snob(state, state.units[0].id)
 
-		return not result.success and "snob selection" in result.error
+		return not result.is_success() and "snob selection" in result.error
 	)
 
 
@@ -146,7 +151,7 @@ func _test_declare_order() -> void:
 
 		var result = GameEngine.declare_order(state, state.units[2].id, "march", 3, [3, 4])
 
-		return (result.success
+		return (result.is_success()
 			and result.new_state.order_phase == "order_execute"
 			and result.new_state.current_order_type == "march"
 			and result.new_state.current_order_move_bonus == 7)  # 3+4 unblundered
@@ -160,7 +165,7 @@ func _test_declare_order() -> void:
 
 		var result = GameEngine.declare_order(state, state.units[2].id, "march", 3, [3, 3])
 
-		return not result.success and "command range" in result.error
+		return not result.is_success() and "command range" in result.error
 	)
 
 	_test("declare_order: diagonal follower within Euclidean command range succeeds", func():
@@ -173,7 +178,7 @@ func _test_declare_order() -> void:
 
 		var result = GameEngine.declare_order(state, state.units[2].id, "march", 3, [3, 3])
 
-		return result.success
+		return result.is_success()
 	)
 
 	_test("declare_order: Snob self-order bypasses blunder check", func():
@@ -183,7 +188,7 @@ func _test_declare_order() -> void:
 		# blunder_die=1 normally blunders, but self-order never blunders
 		var result = GameEngine.declare_order(state, state.units[0].id, "march", 1, [3, 3])
 
-		return (result.success
+		return (result.is_success()
 			and not result.new_state.current_order_blundered
 			and result.new_state.units[0].panic_tokens == 0)
 	)
@@ -194,7 +199,7 @@ func _test_declare_order() -> void:
 
 		var result = GameEngine.declare_order(state, state.units[2].id, "march", 1, [4, 5])
 
-		return (result.success
+		return (result.is_success()
 			and result.new_state.current_order_blundered
 			and result.new_state.units[2].panic_tokens == 1
 			and result.new_state.current_order_move_bonus == 4)  # only first die
@@ -207,7 +212,7 @@ func _test_declare_order() -> void:
 
 		var result = GameEngine.declare_order(state, state.units[2].id, "volley_fire", 3, [3, 3])
 
-		return not result.success and "ranged weapon" in result.error
+		return not result.is_success() and "ranged weapon" in result.error
 	)
 
 	_test("declare_order: reject volley_fire with powder smoke", func():
@@ -218,7 +223,7 @@ func _test_declare_order() -> void:
 
 		var result = GameEngine.declare_order(state, state.units[2].id, "volley_fire", 3, [3, 3])
 
-		return not result.success and "powder smoke" in result.error
+		return not result.is_success() and "powder smoke" in result.error
 	)
 
 	_test("declare_order: reject ordering another Snob", func():
@@ -231,7 +236,7 @@ func _test_declare_order() -> void:
 
 		var result = GameEngine.declare_order(state, u4.id, "march", 3, [3, 3])
 
-		return not result.success and "another Snob" in result.error
+		return not result.is_success() and "another Snob" in result.error
 	)
 
 	_test("declare_order: reject invalid order type", func():
@@ -240,7 +245,7 @@ func _test_declare_order() -> void:
 
 		var result = GameEngine.declare_order(state, state.units[2].id, "teleport", 3, [3, 3])
 
-		return not result.success and "Invalid order type" in result.error
+		return not result.is_success() and "Invalid order type" in result.error
 	)
 
 
@@ -251,7 +256,7 @@ func _test_declare_self_order() -> void:
 		var state = _mock_orders_state_follower_phase()
 		var result = GameEngine.declare_self_order(state, state.units[2].id, "march", 3, [3, 4])
 
-		return (result.success
+		return (result.is_success()
 			and result.new_state.order_phase == "order_execute"
 			and result.new_state.current_order_unit_id == state.units[2].id
 			and result.new_state.current_snob_id == ""
@@ -262,7 +267,7 @@ func _test_declare_self_order() -> void:
 		var state = _mock_orders_state_follower_phase()
 		var result = GameEngine.declare_self_order(state, state.units[2].id, "march", 1, [4, 5])
 
-		return (result.success
+		return (result.is_success()
 			and result.new_state.current_order_blundered
 			and result.new_state.units[2].panic_tokens == 1
 			and result.new_state.current_order_move_bonus == 4)
@@ -274,7 +279,7 @@ func _test_declare_self_order() -> void:
 
 		var result = GameEngine.declare_self_order(state, state.units[0].id, "march", 3, [3, 3])
 
-		return not result.success and "Snobs don't self-order" in result.error
+		return not result.is_success() and "Snobs don't self-order" in result.error
 	)
 
 	_test("declare_self_order: reject outside follower_self_order phase", func():
@@ -282,7 +287,7 @@ func _test_declare_self_order() -> void:
 		# phase is snob_select, not follower_self_order
 		var result = GameEngine.declare_self_order(state, state.units[2].id, "march", 3, [3, 3])
 
-		return not result.success and "follower self-order" in result.error
+		return not result.is_success() and "follower self-order" in result.error
 	)
 
 
@@ -300,7 +305,7 @@ func _test_execute_volley_fire() -> void:
 		# both whiff → 0 shooter wounds.
 		var result = GameEngine.execute_order(state, {"target_id": state.units[1].id}, [4, 1, 1, 1])
 
-		return result.success and result.new_state.units[1].current_wounds == 1
+		return result.is_success() and result.new_state.units[1].current_wounds == 1
 	)
 
 	_test("volley_fire: unblundered roll that barely misses without bonus still hits", func():
@@ -312,7 +317,7 @@ func _test_execute_volley_fire() -> void:
 		# Return fire: 2 dice of 1 → miss, no shooter wounds.
 		var result = GameEngine.execute_order(state, {"target_id": state.units[1].id}, [4, 6, 1, 1])
 
-		return result.success and result.new_state.units[1].current_wounds == 0  # saved
+		return result.is_success() and result.new_state.units[1].current_wounds == 0  # saved
 	)
 
 	_test("volley_fire: blundered loses -1 bonus", func():
@@ -329,7 +334,7 @@ func _test_execute_volley_fire() -> void:
 		# Return fire from Toff u1: 2 dice → 1s miss.
 		var result = GameEngine.execute_order(state, {"target_id": state.units[1].id}, [5, 1, 1, 1])
 
-		return result.success and result.new_state.units[1].current_wounds == 0
+		return result.is_success() and result.new_state.units[1].current_wounds == 0
 	)
 
 	_test("volley_fire: black_powder grants powder smoke after firing", func():
@@ -341,7 +346,7 @@ func _test_execute_volley_fire() -> void:
 		# Shooter miss (3 at I4+), return fire 2 dice of 1 → miss.
 		var result = GameEngine.execute_order(state, {"target_id": state.units[1].id}, [3, 1, 1, 1])
 
-		return result.success and result.new_state.units[0].has_powder_smoke
+		return result.is_success() and result.new_state.units[0].has_powder_smoke
 	)
 
 	_test("volley_fire: hit grants target a panic token", func():
@@ -353,7 +358,7 @@ func _test_execute_volley_fire() -> void:
 		# Return fire: 2 dice of 1 → miss (no extra panic flow).
 		var result = GameEngine.execute_order(state, {"target_id": state.units[1].id}, [4, 6, 1, 1])
 
-		return result.success and result.new_state.units[1].panic_tokens == 1
+		return result.is_success() and result.new_state.units[1].panic_tokens == 1
 	)
 
 	_test("volley_fire: fizzle succeeds when no enemy in range", func():
@@ -364,7 +369,7 @@ func _test_execute_volley_fire() -> void:
 		state = GameEngine.declare_order(state, state.units[0].id, "volley_fire", 3, [3, 3]).new_state
 
 		var result = GameEngine.execute_order(state, {"fizzle": true}, [])
-		return (result.success
+		return (result.is_success()
 			and result.new_state.units[0].has_ordered
 			and result.new_state.units[1].current_wounds == 0)
 	)
@@ -376,7 +381,7 @@ func _test_execute_volley_fire() -> void:
 		state = GameEngine.declare_order(state, state.units[0].id, "volley_fire", 3, [3, 3]).new_state
 
 		var result = GameEngine.execute_order(state, {"fizzle": true}, [])
-		return not result.success and "Cannot fizzle" in result.error
+		return not result.is_success() and "Cannot fizzle" in result.error
 	)
 
 	_test("volley_fire: diagonal target within Euclidean range is valid", func():
@@ -392,7 +397,7 @@ func _test_execute_volley_fire() -> void:
 		state = GameEngine.declare_order(state, state.units[0].id, "volley_fire", 3, [3, 3]).new_state
 
 		var result = GameEngine.execute_order(state, {"target_id": state.units[1].id}, [6, 1])
-		return result.success
+		return result.is_success()
 	)
 
 	_test("volley_fire: multi-model unit fires one attack per model", func():
@@ -412,7 +417,7 @@ func _test_execute_volley_fire() -> void:
 		var dice = [5, 5, 5, 5, 1, 1, 1, 1, 1, 1]
 		var result = GameEngine.execute_order(state, {"target_id": state.units[1].id}, dice)
 
-		return result.success and result.new_state.units[1].is_dead
+		return result.is_success() and result.new_state.units[1].is_dead
 	)
 
 
@@ -430,7 +435,7 @@ func _test_execute_move_and_shoot() -> void:
 		var params = {"x": 12, "y": 15, "target_id": state.units[1].id}
 		var result = GameEngine.execute_order(state, params, [5, 1, 1, 1])
 
-		return (result.success
+		return (result.is_success()
 			and result.new_state.units[0].x == 12
 			and result.new_state.units[1].current_wounds == 1)
 	)
@@ -443,7 +448,7 @@ func _test_execute_move_and_shoot() -> void:
 		# Just move, no shot (no target_id)
 		var result = GameEngine.execute_order(state, {"x": 13, "y": 15}, [])
 
-		return (result.success
+		return (result.is_success()
 			and result.new_state.units[0].x == 13
 			and result.new_state.units[1].current_wounds == 0)
 	)
@@ -462,7 +467,7 @@ func _test_execute_move_and_shoot() -> void:
 		# (15, 15) from (12, 15) = distance 3. Exactly at the blundered cap.
 		var result = GameEngine.execute_order(state, {"x": 15, "y": 15}, [])
 
-		return (result.success
+		return (result.is_success()
 			and result.new_state.units[2].x == 15
 			and result.new_state.units[2].y == 15)
 	)
@@ -480,7 +485,7 @@ func _test_execute_move_and_shoot() -> void:
 		# Distance 3 > 2 → rejected
 		var result = GameEngine.execute_order(state, {"x": 15, "y": 15}, [])
 
-		return not result.success and "movement range" in result.error
+		return not result.is_success() and "movement range" in result.error
 	)
 
 	_test("move_and_shoot: reject move beyond M", func():
@@ -491,7 +496,7 @@ func _test_execute_move_and_shoot() -> void:
 		# Toff M=6, from (10,15). (17,15) is distance 7 > 6 and unoccupied.
 		var result = GameEngine.execute_order(state, {"x": 17, "y": 15}, [])
 
-		return not result.success and "movement range" in result.error
+		return not result.is_success() and "movement range" in result.error
 	)
 
 
@@ -507,7 +512,7 @@ func _test_execute_march() -> void:
 		# From (10,30) to (10,14) = distance 16. Exactly max.
 		var result = GameEngine.execute_order(state, {"x": 10, "y": 14}, [])
 
-		return (result.success
+		return (result.is_success()
 			and result.new_state.units[0].x == 10
 			and result.new_state.units[0].y == 14)
 	)
@@ -521,7 +526,7 @@ func _test_execute_march() -> void:
 		# Fodder M=6, bonus 3, total 9. From (12,30) to (12,20) = 10 > 9.
 		var result = GameEngine.execute_order(state, {"x": 12, "y": 20}, [])
 
-		return not result.success and "march range" in result.error
+		return not result.is_success() and "march range" in result.error
 	)
 
 	_test("march: reject out-of-range destination", func():
@@ -532,7 +537,7 @@ func _test_execute_march() -> void:
 		# Toff M=6, bonus 2, total 8. Distance 20 > 8.
 		var result = GameEngine.execute_order(state, {"x": 10, "y": 10}, [])
 
-		return not result.success and "march range" in result.error
+		return not result.is_success() and "march range" in result.error
 	)
 
 	_test("march: diagonal move within Euclidean range succeeds (would fail Manhattan)", func():
@@ -546,7 +551,7 @@ func _test_execute_march() -> void:
 		# Manhattan would be 22 > 16 → rejected. This test proves Euclidean is active.
 		var result = GameEngine.execute_order(state, {"x": 21, "y": 26}, [])
 
-		return result.success and result.new_state.units[0].x == 21
+		return result.is_success() and result.new_state.units[0].x == 21
 	)
 
 
@@ -565,7 +570,7 @@ func _test_execute_charge() -> void:
 		# [5,5,1,1]: 2 hits, 2 unsaved → 2 wounds → target dies.
 		var result = GameEngine.execute_order(state, {"target_id": state.units[1].id}, [5, 5, 1, 1])
 
-		return (result.success
+		return (result.is_success()
 			and result.new_state.units[0].x == 14  # moves to nearest adjacent cell
 			and result.new_state.units[0].y == 10
 			and result.new_state.units[1].is_dead)
@@ -581,7 +586,7 @@ func _test_execute_charge() -> void:
 
 		var result = GameEngine.execute_order(state, {"target_id": state.units[1].id}, [5, 5, 1, 1])
 
-		return not result.success and "charge range" in result.error
+		return not result.is_success() and "charge range" in result.error
 	)
 
 	_test("charge: close_combat equipment reduces inaccuracy by 1", func():
@@ -596,7 +601,7 @@ func _test_execute_charge() -> void:
 		# Roll 5s for attacks (hits only with CC bonus), 1s for saves.
 		var result = GameEngine.execute_order(state, {"target_id": state.units[1].id}, [5, 5, 1, 1])
 
-		return result.success and result.new_state.units[1].is_dead
+		return result.is_success() and result.new_state.units[1].is_dead
 	)
 
 	_test("charge: fizzle succeeds when no enemy in charge range", func():
@@ -609,7 +614,7 @@ func _test_execute_charge() -> void:
 		state = GameEngine.declare_order(state, state.units[0].id, "charge", 3, [3, 3]).new_state
 
 		var result = GameEngine.execute_order(state, {"fizzle": true}, [])
-		return (result.success and result.new_state.units[0].has_ordered)
+		return (result.is_success() and result.new_state.units[0].has_ordered)
 	)
 
 	_test("charge: fizzle rejected when a valid target exists", func():
@@ -620,7 +625,7 @@ func _test_execute_charge() -> void:
 		state = GameEngine.declare_order(state, state.units[0].id, "charge", 3, [3, 3]).new_state
 
 		var result = GameEngine.execute_order(state, {"fizzle": true}, [])
-		return not result.success and "Cannot fizzle" in result.error
+		return not result.is_success() and "Cannot fizzle" in result.error
 	)
 
 
@@ -630,28 +635,28 @@ func _test_panic_test() -> void:
 	_test("panic_test: 0 tokens auto-passes", func():
 		var unit = _mock_unit("u0", 1, "Fodder", "infantry", 6, 1, 6, 1, 6, 0, 12)
 		unit.panic_tokens = 0
-		var result = GameEngine._panic_test(unit, 6, 1)
+		var result = GameEngine.Panic.panic_test(unit, 6, 1)
 		return result["passed"] and result["auto_passed"]
 	)
 
 	_test("panic_test: natural 1 always passes regardless of tokens", func():
 		var unit = _mock_unit("u0", 1, "Fodder", "infantry", 6, 1, 6, 1, 6, 0, 12)
 		unit.panic_tokens = 6  # max tokens, but die=1 → pass
-		var result = GameEngine._panic_test(unit, 1, 1)
+		var result = GameEngine.Panic.panic_test(unit, 1, 1)
 		return result["passed"] and not result["auto_passed"]
 	)
 
 	_test("panic_test: D6 + tokens <= 6 passes", func():
 		var unit = _mock_unit("u0", 1, "Fodder", "infantry", 6, 1, 6, 1, 6, 0, 12)
 		unit.panic_tokens = 3  # die=3, total=6 ≤ 6 → pass
-		var result = GameEngine._panic_test(unit, 3, 1)
+		var result = GameEngine.Panic.panic_test(unit, 3, 1)
 		return result["passed"] and result["total"] == 6
 	)
 
 	_test("panic_test: D6 + tokens >= 7 fails", func():
 		var unit = _mock_unit("u0", 1, "Fodder", "infantry", 6, 1, 6, 1, 6, 0, 12)
 		unit.panic_tokens = 3  # die=4, total=7 ≥ 7 → fail
-		var result = GameEngine._panic_test(unit, 4, 1)
+		var result = GameEngine.Panic.panic_test(unit, 4, 1)
 		return not result["passed"] and result["total"] == 7
 	)
 
@@ -660,7 +665,7 @@ func _test_panic_test() -> void:
 		var rules: Array[String] = ["fearless"]
 		var unit = Types.UnitState.new("u0", 1, "Brutes", "infantry", 6, 6, stats, "black_powder", rules)
 		unit.panic_tokens = 4  # die=5, total=9 → fail, but Fearless 3+ saves
-		var result = GameEngine._panic_test(unit, 5, 3)
+		var result = GameEngine.Panic.panic_test(unit, 5, 3)
 		return result["passed"] and result["fearless_override"] and result["used_fearless"]
 	)
 
@@ -669,7 +674,7 @@ func _test_panic_test() -> void:
 		var rules: Array[String] = ["fearless"]
 		var unit = Types.UnitState.new("u0", 1, "Brutes", "infantry", 6, 6, stats, "black_powder", rules)
 		unit.panic_tokens = 4  # die=5, total=9 → fail, Fearless die=2 → still fails
-		var result = GameEngine._panic_test(unit, 5, 2)
+		var result = GameEngine.Panic.panic_test(unit, 5, 2)
 		return not result["passed"] and result["used_fearless"] and not result["fearless_override"]
 	)
 
@@ -678,7 +683,7 @@ func _test_panic_test() -> void:
 		var rules: Array[String] = ["safety_in_numbers"]
 		var unit = Types.UnitState.new("u0", 1, "Fodder", "infantry", 8, 12, stats, "black_powder", rules)
 		unit.panic_tokens = 4
-		var result = GameEngine._panic_test(unit, 5, 4)  # total=9, Fearless die=4 → override
+		var result = GameEngine.Panic.panic_test(unit, 5, 4)  # total=9, Fearless die=4 → override
 		return result["passed"] and result["fearless_override"]
 	)
 
@@ -687,7 +692,7 @@ func _test_panic_test() -> void:
 		var rules: Array[String] = ["safety_in_numbers"]
 		var unit = Types.UnitState.new("u0", 1, "Fodder", "infantry", 7, 12, stats, "black_powder", rules)
 		unit.panic_tokens = 4
-		var result = GameEngine._panic_test(unit, 5, 4)  # total=9, but not Fearless → fails
+		var result = GameEngine.Panic.panic_test(unit, 5, 4)  # total=9, but not Fearless → fails
 		return not result["passed"] and not result["used_fearless"]
 	)
 
@@ -707,7 +712,7 @@ func _test_panic_test() -> void:
 		# After +1 panic token, target has 5 tokens. Retreat distance = D6 + 2×5 =
 		# 2 + 10 = 12. Target was at (15,10), charger at (10,10), retreat +X.
 		# Ideal destination: (27, 10).
-		return (result.success
+		return (result.is_success()
 			and result.new_state.units[0].x == 14  # charger moved adjacent
 			and not result.new_state.units[1].is_dead  # no melee happened
 			and result.new_state.units[1].panic_tokens == 5  # +1 from failed test
@@ -727,7 +732,7 @@ func _test_panic_test() -> void:
 		var params = {"target_id": state.units[1].id, "panic_die": 3, "fearless_die": 1}
 		var result = GameEngine.execute_order(state, params, [5, 5, 1, 1])
 
-		return (result.success
+		return (result.is_success()
 			and result.new_state.units[1].is_dead  # melee resolved, target killed
 			and result.new_state.units[1].panic_tokens == 2)  # no extra panic
 	)
@@ -755,7 +760,7 @@ func _test_panic_test() -> void:
 			dice.append(1)
 		var result = GameEngine.execute_order(state, params, dice)
 
-		return (result.success
+		return (result.is_success()
 			and result.new_state.units[0].x == 14  # charger moved
 			and result.new_state.units[1].panic_tokens == 5  # +1 post-melee
 			and result.new_state.units[1].model_count < 6)  # melee happened, took casualties
@@ -772,7 +777,7 @@ func _test_retreat() -> void:
 		state.units[2].x = 20; state.units[2].y = 15
 		state.units[2].panic_tokens = 3
 		state.units[1].x = 15; state.units[1].y = 15  # nearest enemy
-		var result = GameEngine._execute_retreat(state, state.units[2].id, 3)
+		var result = GameEngine.Panic.execute_retreat(state, state.units[2].id, 3)
 		return (result["retreated"]
 			and result["distance"] == 9
 			and state.units[2].x == 29
@@ -786,7 +791,7 @@ func _test_retreat() -> void:
 		state.units[2].x = 20; state.units[2].y = 20
 		state.units[2].panic_tokens = 2
 		state.units[1].x = 17; state.units[1].y = 17
-		var result = GameEngine._execute_retreat(state, state.units[2].id, 1)
+		var result = GameEngine.Panic.execute_retreat(state, state.units[2].id, 1)
 		return (result["retreated"]
 			and state.units[2].x == 24
 			and state.units[2].y == 24)
@@ -798,7 +803,7 @@ func _test_retreat() -> void:
 		state.units[2].x = 20; state.units[2].y = 15
 		state.units[2].panic_tokens = 0
 		state.units[1].x = 15; state.units[1].y = 15
-		var result = GameEngine._execute_retreat(state, state.units[2].id, 4)
+		var result = GameEngine.Panic.execute_retreat(state, state.units[2].id, 4)
 		return (result["retreated"]
 			and result["distance"] == 4
 			and state.units[2].x == 24)
@@ -811,7 +816,7 @@ func _test_retreat() -> void:
 		state.units[2].x = 46; state.units[2].y = 15
 		state.units[2].panic_tokens = 3
 		state.units[1].x = 44; state.units[1].y = 15
-		var result = GameEngine._execute_retreat(state, state.units[2].id, 1)
+		var result = GameEngine.Panic.execute_retreat(state, state.units[2].id, 1)
 		return (result["retreated"]
 			and result["destroyed"]
 			and state.units[2].is_dead
@@ -827,7 +832,7 @@ func _test_retreat() -> void:
 		stump.panic_tokens = 4
 		state.units.append(stump)
 		state.units[1].x = 15; state.units[1].y = 15
-		var result = GameEngine._execute_retreat(state, "stump", 6)
+		var result = GameEngine.Panic.execute_retreat(state, "stump", 6)
 		return (result["stubborn_held"]
 			and not result["retreated"]
 			and stump.x == 20 and stump.y == 15)
@@ -841,7 +846,7 @@ func _test_retreat() -> void:
 		state.units[2].panic_tokens = 1
 		state.units[1].x = 18; state.units[1].y = 15
 		state.units[3].x = 23; state.units[3].y = 15  # blocker at ideal dest
-		var result = GameEngine._execute_retreat(state, state.units[2].id, 1)
+		var result = GameEngine.Panic.execute_retreat(state, state.units[2].id, 1)
 		return (result["retreated"]
 			and (state.units[2].x != 23 or state.units[2].y != 15))
 	)
@@ -852,7 +857,7 @@ func _test_retreat() -> void:
 		state.units[2].x = 20; state.units[2].y = 15
 		state.units[2].panic_tokens = 0
 		state.units[1].x = 15; state.units[1].y = 15
-		var result = GameEngine._execute_retreat(state, state.units[2].id, 6)
+		var result = GameEngine.Panic.execute_retreat(state, state.units[2].id, 6)
 		return (result["retreated"]
 			and result["distance"] == 6
 			and state.units[2].x == 26)
@@ -862,13 +867,13 @@ func _test_retreat() -> void:
 func _test_melee_bouts() -> void:
 	print("\n[Test Suite: Melee Bouts]")
 
-	# --- Direct _resolve_melee unit tests ---
+	# --- Direct Combat.resolve_melee unit tests ---
 
 	_test("melee: attacker kills defender in bout 1, no counter-attack", func():
 		var atk = _mock_unit("atk", 1, "Toff", "snob", 6, 2, 5, 2, 5, 6, 1)
 		var def = _mock_unit("def", 2, "Toff", "snob", 6, 2, 5, 2, 5, 6, 1)
 		# Attacker 2 attacks × 2 dice = 4 dice. [5,5,1,1] → 2 hits, 2 unsaved → defender dies.
-		var combat = GameEngine._resolve_melee(atk, def, [5, 5, 1, 1])
+		var combat = GameEngine.Combat.resolve_melee(atk, def, [5, 5, 1, 1])
 		return (combat["error"] == ""
 			and combat["bouts"].size() == 1
 			and combat["winner_id"] == "atk"
@@ -883,7 +888,7 @@ func _test_melee_bouts() -> void:
 		var atk = _mock_unit("atk", 1, "Toff", "snob", 6, 2, 5, 2, 5, 6, 1)
 		var def = _mock_unit("def", 2, "Toff", "snob", 6, 2, 5, 2, 5, 6, 1)
 		# Attacker [1,1,1,1] → 0 hits. Defender [5,5,1,1] → 2 unsaved → attacker dies.
-		var combat = GameEngine._resolve_melee(atk, def, [1, 1, 1, 1, 5, 5, 1, 1])
+		var combat = GameEngine.Combat.resolve_melee(atk, def, [1, 1, 1, 1, 5, 5, 1, 1])
 		return (combat["error"] == ""
 			and combat["bouts"].size() == 1
 			and combat["winner_id"] == "def"
@@ -897,7 +902,7 @@ func _test_melee_bouts() -> void:
 		var def = _mock_unit("def", 2, "Toff", "snob", 6, 2, 5, 2, 5, 6, 1)
 		# Bout 1: both whiff (0-0 tie). Bout 2: attacker kills.
 		var dice = [1, 1, 1, 1,   1, 1, 1, 1,   5, 5, 1, 1]
-		var combat = GameEngine._resolve_melee(atk, def, dice)
+		var combat = GameEngine.Combat.resolve_melee(atk, def, dice)
 		return (combat["error"] == ""
 			and combat["bouts"].size() == 2
 			and combat["winner_id"] == "atk"
@@ -913,9 +918,9 @@ func _test_melee_bouts() -> void:
 		var dice: Array = []
 		for i in range(24):
 			dice.append(1)
-		var combat = GameEngine._resolve_melee(atk, def, dice)
+		var combat = GameEngine.Combat.resolve_melee(atk, def, dice)
 		return (combat["error"] == ""
-			and combat["bouts"].size() == GameEngine.MELEE_MAX_BOUTS
+			and combat["bouts"].size() == Combat.MELEE_MAX_BOUTS
 			and combat["draw"]
 			and combat["winner_id"] == ""
 			and combat["loser_id"] == ""
@@ -927,7 +932,7 @@ func _test_melee_bouts() -> void:
 		var atk = _mock_unit("atk", 1, "Toff", "snob", 6, 2, 5, 2, 5, 6, 1)
 		var def = _mock_unit("def", 2, "Toff", "snob", 6, 2, 5, 2, 5, 6, 1)
 		def.is_dead = true
-		var combat = GameEngine._resolve_melee(atk, def, [])
+		var combat = GameEngine.Combat.resolve_melee(atk, def, [])
 		return combat["error"] != ""
 	)
 
@@ -935,7 +940,7 @@ func _test_melee_bouts() -> void:
 		var atk = _mock_unit("atk", 1, "Toff", "snob", 6, 2, 5, 2, 5, 6, 1)
 		var def = _mock_unit("def", 2, "Toff", "snob", 6, 2, 5, 2, 5, 6, 1)
 		# Attacker needs 4 dice, give it 2.
-		var combat = GameEngine._resolve_melee(atk, def, [5, 5])
+		var combat = GameEngine.Combat.resolve_melee(atk, def, [5, 5])
 		return combat["error"] != "" and "Not enough dice" in combat["error"]
 	)
 
@@ -962,7 +967,7 @@ func _test_melee_bouts() -> void:
 		var params = {"target_id": state.units[1].id, "panic_die": 6, "fearless_die": 1}
 		var result = GameEngine.execute_order(state, params, dice)
 
-		return (result.success
+		return (result.is_success()
 			and result.new_state.units[0].panic_tokens == 1  # attacker +1 post-melee
 			and result.new_state.units[1].panic_tokens == 1  # defender +1 post-melee
 			and not result.new_state.units[0].is_dead
@@ -988,13 +993,13 @@ func _test_melee_bouts() -> void:
 		var result = GameEngine.execute_order(state, params, dice)
 
 		# Charger moved adjacent to (x=10, y=10 → x=10 target at 11), charge_dest x=10 wait...
-		# _find_adjacent_cell picks nearest adjacent cell to target. Target at (11,10), charger
+		# Targeting.find_adjacent_cell picks nearest adjacent cell to target. Target at (11,10), charger
 		# approaching from (10,10) → adjacent cell (10,10) itself is distance 1 from target. Fine.
 		# After losing: charger retreats 2×(panic_tokens_after_melee=1) = 2 cells away from defender.
 		# Defender at (11,10), charger now at charge_dest.x. Retreat direction = -x.
 		# So final charger x < charge_dest.x.
 		var charger = result.new_state.units[0]
-		return (result.success
+		return (result.is_success()
 			and not charger.is_dead
 			and charger.panic_tokens == 1  # +1 post-melee
 			and charger.x < 11  # retreated away from defender
@@ -1007,7 +1012,7 @@ func _test_melee_bouts() -> void:
 func _test_shooting_engagements() -> void:
 	print("\n[Test Suite: Shooting Engagements]")
 
-	# --- Direct _resolve_shooting_engagement tests ---
+	# --- Direct Combat.resolve_shooting_engagement tests ---
 
 	_test("engagement: return fire fires when target in range with weapon", func():
 		var atk = _mock_unit("atk", 1, "Toff", "snob", 6, 2, 5, 2, 5, 18, 1)
@@ -1015,7 +1020,7 @@ func _test_shooting_engagements() -> void:
 		atk.x = 10; atk.y = 10
 		dfn.x = 15; dfn.y = 10  # within 18
 		# Attacker [5,1] hits + wounds (I5+, V5). Defender [5,1] same.
-		var combat = GameEngine._resolve_shooting_engagement(atk, dfn, [5, 1, 5, 1], 0)
+		var combat = GameEngine.Combat.resolve_shooting_engagement(atk, dfn, [5, 1, 5, 1], 0)
 		return (combat["error"] == ""
 			and combat["return_fire_fired"]
 			and combat["att_hits"] == 1 and combat["att_wounds"] == 1
@@ -1030,7 +1035,7 @@ func _test_shooting_engagements() -> void:
 		atk.x = 10; atk.y = 10
 		dfn.x = 15; dfn.y = 10
 		dfn.has_powder_smoke = true
-		var combat = GameEngine._resolve_shooting_engagement(atk, dfn, [5, 1], 0)
+		var combat = GameEngine.Combat.resolve_shooting_engagement(atk, dfn, [5, 1], 0)
 		return (combat["error"] == ""
 			and not combat["return_fire_fired"]
 			and combat["att_wounds"] == 1
@@ -1046,7 +1051,7 @@ func _test_shooting_engagements() -> void:
 		atk.x = 10; atk.y = 10
 		dfn.x = 20; dfn.y = 10
 		atk.base_stats.weapon_range = 18
-		var combat = GameEngine._resolve_shooting_engagement(atk, dfn, [5, 1], 0)
+		var combat = GameEngine.Combat.resolve_shooting_engagement(atk, dfn, [5, 1], 0)
 		return (combat["error"] == ""
 			and not combat["return_fire_fired"]
 			and combat["winner_id"] == "atk")
@@ -1057,7 +1062,7 @@ func _test_shooting_engagements() -> void:
 		var dfn = _mock_unit("dfn", 2, "Brutes", "infantry", 6, 2, 5, 2, 5, 0, 1)
 		atk.x = 10; atk.y = 10
 		dfn.x = 12; dfn.y = 10
-		var combat = GameEngine._resolve_shooting_engagement(atk, dfn, [5, 1], 0)
+		var combat = GameEngine.Combat.resolve_shooting_engagement(atk, dfn, [5, 1], 0)
 		return combat["error"] == "" and not combat["return_fire_fired"]
 	)
 
@@ -1073,7 +1078,7 @@ func _test_shooting_engagements() -> void:
 		# should not reduce the pool.
 		var dice = [5, 5, 5, 5, 1, 1, 1, 1,   # attacker 4 hits, 4 wounds
 					5, 5, 5, 1, 1, 1]          # defender 3 hits (I5+), 3 wounds
-		var combat = GameEngine._resolve_shooting_engagement(atk, dfn, dice, 0)
+		var combat = GameEngine.Combat.resolve_shooting_engagement(atk, dfn, dice, 0)
 		return (combat["error"] == ""
 			and combat["return_fire_fired"]
 			and combat["att_hits"] == 4 and combat["att_wounds"] == 4
@@ -1090,7 +1095,7 @@ func _test_shooting_engagements() -> void:
 		var dfn = _mock_unit("dfn", 2, "Toff", "snob", 6, 2, 5, 2, 5, 18, 1)
 		atk.x = 10; atk.y = 10
 		dfn.x = 15; dfn.y = 10
-		var combat = GameEngine._resolve_shooting_engagement(atk, dfn, [5, 1, 1, 1], 0)
+		var combat = GameEngine.Combat.resolve_shooting_engagement(atk, dfn, [5, 1, 1, 1], 0)
 		return (combat["error"] == ""
 			and combat["winner_id"] == "atk"
 			and combat["loser_id"] == "dfn"
@@ -1102,7 +1107,7 @@ func _test_shooting_engagements() -> void:
 		var dfn = _mock_unit("dfn", 2, "Toff", "snob", 6, 2, 5, 2, 5, 18, 1)
 		atk.x = 10; atk.y = 10
 		dfn.x = 15; dfn.y = 10
-		var combat = GameEngine._resolve_shooting_engagement(atk, dfn, [1, 1, 5, 1], 0)
+		var combat = GameEngine.Combat.resolve_shooting_engagement(atk, dfn, [1, 1, 5, 1], 0)
 		return (combat["error"] == ""
 			and combat["winner_id"] == "dfn"
 			and combat["loser_id"] == "atk"
@@ -1114,7 +1119,7 @@ func _test_shooting_engagements() -> void:
 		var dfn = _mock_unit("dfn", 2, "Toff", "snob", 6, 2, 5, 2, 5, 18, 1)
 		atk.x = 10; atk.y = 10
 		dfn.x = 15; dfn.y = 10
-		var combat = GameEngine._resolve_shooting_engagement(atk, dfn, [1, 1, 1, 1], 0)
+		var combat = GameEngine.Combat.resolve_shooting_engagement(atk, dfn, [1, 1, 1, 1], 0)
 		return (combat["error"] == ""
 			and combat["tie"]
 			and combat["winner_id"] == "" and combat["loser_id"] == "")
@@ -1124,7 +1129,7 @@ func _test_shooting_engagements() -> void:
 		var atk = _mock_unit("atk", 1, "Toff", "snob", 6, 2, 5, 2, 5, 18, 1)
 		var dfn = _mock_unit("dfn", 2, "Toff", "snob", 6, 2, 5, 2, 5, 18, 1)
 		dfn.is_dead = true
-		var combat = GameEngine._resolve_shooting_engagement(atk, dfn, [], 0)
+		var combat = GameEngine.Combat.resolve_shooting_engagement(atk, dfn, [], 0)
 		return combat["error"] != ""
 	)
 
@@ -1143,7 +1148,7 @@ func _test_shooting_engagements() -> void:
 
 		# Defender had 0 panic tokens, got hit → +1 panic. Retreat distance = 2 + 2*1 = 4.
 		# Defender at (20,15), attacker at (10,15), retreat +X → (24,15).
-		return (result.success
+		return (result.is_success()
 			and result.new_state.units[1].panic_tokens == 1
 			and result.new_state.units[1].x == 24
 			and result.new_state.units[1].y == 15)
@@ -1161,7 +1166,7 @@ func _test_shooting_engagements() -> void:
 		var result = GameEngine.execute_order(state, params, [4, 1, 5, 1])
 
 		# Neither retreats; both still at original positions.
-		return (result.success
+		return (result.is_success()
 			and result.new_state.units[0].x == 10 and result.new_state.units[0].y == 15
 			and result.new_state.units[1].x == 20 and result.new_state.units[1].y == 15
 			and result.new_state.units[0].current_wounds == 1
@@ -1184,7 +1189,7 @@ func _test_shooting_engagements() -> void:
 		var result = GameEngine.execute_order(state, params, [5, 5, 1, 1, 5, 1])
 
 		# Attacker took 1 wound from return fire; defender dead.
-		return (result.success
+		return (result.is_success()
 			and result.new_state.units[1].is_dead
 			and result.new_state.units[0].current_wounds == 1)
 	)
@@ -1205,7 +1210,7 @@ func _test_shooting_engagements() -> void:
 		var result = GameEngine.execute_order(state, params, [5, 1, 5, 1])
 
 		# Both hit+wound → tie, no retreat. Confirms return fire measured from (14,15).
-		return (result.success
+		return (result.is_success()
 			and result.new_state.units[0].x == 14
 			and result.new_state.units[0].current_wounds == 1
 			and result.new_state.units[1].current_wounds == 1)
@@ -1222,7 +1227,7 @@ func _test_line_of_sight() -> void:
 		# No blockers between them
 		state.units[2].x = 5; state.units[2].y = 5  # out of the way
 		state.units[3].x = 30; state.units[3].y = 5  # out of the way
-		return GameEngine._has_line_of_sight(state, 10, 15, 20, 15)
+		return GameEngine.Targeting.has_line_of_sight(state, 10, 15, 20, 15)
 	)
 
 	_test("LoS: Follower unit on the line blocks", func():
@@ -1231,7 +1236,7 @@ func _test_line_of_sight() -> void:
 		state.units[1].x = 20; state.units[1].y = 15
 		# Place a Follower directly between them
 		state.units[2].x = 15; state.units[2].y = 15
-		return not GameEngine._has_line_of_sight(state, 10, 15, 20, 15)
+		return not GameEngine.Targeting.has_line_of_sight(state, 10, 15, 20, 15)
 	)
 
 	_test("LoS: Snob on the line does NOT block", func():
@@ -1244,7 +1249,7 @@ func _test_line_of_sight() -> void:
 		state.units[3].x = 20; state.units[3].y = 15  # Follower as actual target
 		# LoS from u0 to u3 should pass — u1 (Snob) doesn't block.
 		state.units[2].x = 5; state.units[2].y = 5  # out of the way
-		return GameEngine._has_line_of_sight(state, 10, 15, 20, 15)
+		return GameEngine.Targeting.has_line_of_sight(state, 10, 15, 20, 15)
 	)
 
 	_test("LoS: dead unit on the line does NOT block", func():
@@ -1254,7 +1259,7 @@ func _test_line_of_sight() -> void:
 		state.units[2].x = 15; state.units[2].y = 15  # Follower in the way
 		state.units[2].is_dead = true  # but dead
 		state.units[3].x = 30; state.units[3].y = 5
-		return GameEngine._has_line_of_sight(state, 10, 15, 20, 15)
+		return GameEngine.Targeting.has_line_of_sight(state, 10, 15, 20, 15)
 	)
 
 	_test("LoS: endpoints are excluded from blocker check", func():
@@ -1264,7 +1269,7 @@ func _test_line_of_sight() -> void:
 		state.units[3].x = 20; state.units[3].y = 15
 		state.units[0].x = 5; state.units[0].y = 5
 		state.units[1].x = 30; state.units[1].y = 5
-		return GameEngine._has_line_of_sight(state, 10, 15, 20, 15)
+		return GameEngine.Targeting.has_line_of_sight(state, 10, 15, 20, 15)
 	)
 
 	_test("LoS: diagonal line blocked by unit on the path", func():
@@ -1274,7 +1279,7 @@ func _test_line_of_sight() -> void:
 		# Place blocker at (13,13) — on the diagonal line
 		state.units[2].x = 13; state.units[2].y = 13
 		state.units[3].x = 30; state.units[3].y = 5
-		return not GameEngine._has_line_of_sight(state, 10, 10, 16, 16)
+		return not GameEngine.Targeting.has_line_of_sight(state, 10, 10, 16, 16)
 	)
 
 	_test("closest-target: reject non-closest enemy", func():
@@ -1287,7 +1292,7 @@ func _test_line_of_sight() -> void:
 
 		# Try to target u1 (farther) instead of u3 (closer) — should be rejected.
 		var result = GameEngine.execute_order(state, {"target_id": state.units[1].id}, [6, 1])
-		return not result.success and "closest" in result.error
+		return not result.is_success() and "closest" in result.error
 	)
 
 	_test("closest-target: tied-closest both legal", func():
@@ -1308,7 +1313,7 @@ func _test_line_of_sight() -> void:
 		state = GameEngine.declare_order(state, state.units[0].id, "volley_fire", 3, [3, 3]).new_state
 		var r2 = GameEngine.execute_order(state, {"target_id": state.units[3].id}, [6, 1, 1, 1])
 
-		return r1.success and r2.success
+		return r1.is_success() and r2.is_success()
 	)
 
 	_test("closest-target: Sharpshooters bypass restriction", func():
@@ -1322,7 +1327,7 @@ func _test_line_of_sight() -> void:
 
 		# Target u1 (farther) — should succeed for Sharpshooters. Enough dice for engagement.
 		var result = GameEngine.execute_order(state, {"target_id": state.units[1].id}, [6, 1, 1, 1])
-		return result.success
+		return result.is_success()
 	)
 
 	_test("volley_fire: LoS blocked = fizzle succeeds", func():
@@ -1338,7 +1343,7 @@ func _test_line_of_sight() -> void:
 		state = GameEngine.declare_order(state, state.units[0].id, "volley_fire", 3, [3, 3]).new_state
 
 		var result = GameEngine.execute_order(state, {"fizzle": true}, [])
-		return result.success
+		return result.is_success()
 	)
 
 	_test("charge: LoS required to target", func():
@@ -1352,7 +1357,7 @@ func _test_line_of_sight() -> void:
 
 		var params = {"target_id": state.units[1].id, "panic_die": 1, "fearless_die": 1}
 		var result = GameEngine.execute_order(state, params, [5, 5, 1, 1])
-		return not result.success and "line of sight" in result.error
+		return not result.is_success() and "line of sight" in result.error
 	)
 
 
@@ -1366,7 +1371,7 @@ func _test_advance_flow() -> void:
 
 		var result = GameEngine.execute_order(state, {"x": 10, "y": 24}, [])
 
-		return (result.success
+		return (result.is_success()
 			and result.new_state.active_seat == 2
 			and result.new_state.order_phase == "snob_select")
 	)
@@ -1378,7 +1383,7 @@ func _test_advance_flow() -> void:
 
 		var result = GameEngine.execute_order(state, {"x": 12, "y": 24}, [])
 
-		return (result.success
+		return (result.is_success()
 			and result.new_state.units[0].has_ordered  # Snob
 			and result.new_state.units[2].has_ordered)  # Follower
 	)
@@ -1408,7 +1413,7 @@ func _test_advance_flow() -> void:
 		state = GameEngine.declare_self_order(state, state.units[2].id, "march", 3, [3, 3]).new_state
 		var result = GameEngine.execute_order(state, {"x": 12, "y": 24}, [])
 
-		return (result.success
+		return (result.is_success()
 			and result.new_state.current_round == 2
 			and not result.new_state.units[0].has_ordered  # flags cleared
 			and result.new_state.order_phase == "snob_select")
@@ -1424,7 +1429,7 @@ func _test_advance_flow() -> void:
 		state = GameEngine.declare_self_order(state, state.units[2].id, "march", 3, [3, 3]).new_state
 		var result = GameEngine.execute_order(state, {"x": 12, "y": 24}, [])
 
-		return result.success and result.new_state.phase == "finished"
+		return result.is_success() and result.new_state.phase == "finished"
 	)
 
 	_test("advance: powder smoke cleared at round end", func():
@@ -1437,7 +1442,7 @@ func _test_advance_flow() -> void:
 		state = GameEngine.declare_self_order(state, state.units[2].id, "march", 3, [3, 3]).new_state
 		var result = GameEngine.execute_order(state, {"x": 12, "y": 24}, [])
 
-		return result.success and not result.new_state.units[0].has_powder_smoke
+		return result.is_success() and not result.new_state.units[0].has_powder_smoke
 	)
 
 
@@ -1450,7 +1455,7 @@ func _test_victory_conditions() -> void:
 			if unit.owner_seat == 2:
 				unit.is_dead = true
 
-		var victory = GameEngine.check_victory(state)
+		var victory = Objectives.check_victory(state)
 		return victory["winner"] == 1
 	)
 
@@ -1458,7 +1463,7 @@ func _test_victory_conditions() -> void:
 		var state = _mock_orders_state()
 		state.units[0].is_dead = true  # kill seat 1 Snob
 
-		var victory = GameEngine.check_victory(state)
+		var victory = Objectives.check_victory(state)
 		return victory["winner"] == 2 and "Snobs" in victory["reason"]
 	)
 
@@ -1469,14 +1474,14 @@ func _test_victory_conditions() -> void:
 		state.units.append(_mock_unit("u0", 1, "Toff", "snob", 6, 2, 5, 2, 5, 6, 1))
 		state.units[0].x = 10; state.units[0].y = 10
 
-		var victory = GameEngine.check_victory(state)
+		var victory = Objectives.check_victory(state)
 		return victory["winner"] == 0
 	)
 
 	_test("No winner when both have living units and snobs", func():
 		var state = _mock_orders_state()
 
-		var victory = GameEngine.check_victory(state)
+		var victory = Objectives.check_victory(state)
 		return victory["winner"] == 0 and victory["reason"] == ""
 	)
 
@@ -1486,7 +1491,7 @@ func _test_victory_conditions() -> void:
 		state.max_rounds = 4
 		state.objectives = _mock_objectives([[1, 2], [1, 0], [2, 0]])
 
-		var victory = GameEngine.check_victory(state)
+		var victory = Objectives.check_victory(state)
 		return victory["winner"] == 1 and "2 objective" in victory["reason"]
 	)
 
@@ -1501,7 +1506,7 @@ func _test_victory_conditions() -> void:
 				unit.model_count += 5
 				break
 
-		var victory = GameEngine.check_victory(state)
+		var victory = Objectives.check_victory(state)
 		return victory["winner"] == 0 and "Draw" in victory["reason"]
 	)
 
@@ -1511,7 +1516,7 @@ func _test_victory_conditions() -> void:
 		state.max_rounds = 4
 		state.objectives = _mock_objectives([[0, 0], [0, 0]])
 
-		var victory = GameEngine.check_victory(state)
+		var victory = Objectives.check_victory(state)
 		return victory["winner"] == 0 and "Draw" in victory["reason"]
 	)
 
@@ -1528,7 +1533,7 @@ func _test_objectives() -> void:
 		var state = _mock_orders_state()
 		state.objectives = _mock_objectives_at([[20, 15]])
 		state.units[2].x = 20; state.units[2].y = 16  # seat 1 Follower
-		GameEngine._resolve_objective_captures(state)
+		GameEngine.Objectives.resolve_objective_captures(state)
 		return state.objectives[0].captured_by == 1
 	)
 
@@ -1536,7 +1541,7 @@ func _test_objectives() -> void:
 		var state = _mock_orders_state()
 		state.objectives = _mock_objectives_at([[10, 29]])
 		# Seat 1 Snob at (10, 30) is already adjacent to (10, 29).
-		GameEngine._resolve_objective_captures(state)
+		GameEngine.Objectives.resolve_objective_captures(state)
 		return state.objectives[0].captured_by == 0
 	)
 
@@ -1546,7 +1551,7 @@ func _test_objectives() -> void:
 		state.objectives[0].captured_by = 1  # Pre-existing control
 		state.units[2].x = 15; state.units[2].y = 14  # seat 1 Follower
 		state.units[3].x = 15; state.units[3].y = 16  # seat 2 Follower
-		GameEngine._resolve_objective_captures(state)
+		GameEngine.Objectives.resolve_objective_captures(state)
 		return state.objectives[0].captured_by == 0
 	)
 
@@ -1557,7 +1562,7 @@ func _test_objectives() -> void:
 		# No followers adjacent at all.
 		state.units[2].x = 0; state.units[2].y = 0
 		state.units[3].x = 0; state.units[3].y = 31
-		GameEngine._resolve_objective_captures(state)
+		GameEngine.Objectives.resolve_objective_captures(state)
 		return state.objectives[0].captured_by == 2
 	)
 
@@ -1568,7 +1573,7 @@ func _test_objectives() -> void:
 		# Seat 2 Follower adjacent, seat 1 Follower far away.
 		state.units[2].x = 0; state.units[2].y = 0
 		state.units[3].x = 20; state.units[3].y = 14
-		GameEngine._resolve_objective_captures(state)
+		GameEngine.Objectives.resolve_objective_captures(state)
 		return state.objectives[0].captured_by == 2
 	)
 
@@ -1579,7 +1584,7 @@ func _test_objectives() -> void:
 		state = GameEngine.select_snob(state, state.units[0].id).new_state
 		state = GameEngine.declare_order(state, follower.id, "march", 4, [3, 3]).new_state
 		var res = GameEngine.execute_order(state, {"x": 20, "y": 15}, [])
-		return not res.success and "objective" in res.error
+		return not res.is_success() and "objective" in res.error
 	)
 
 

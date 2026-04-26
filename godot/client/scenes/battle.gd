@@ -1,14 +1,11 @@
 extends Control
 ## Battle — main gameplay view, unit placement, combat resolution.
+##
+## Board geometry and deployment zones live in game/board.gd — never
+## redeclare them here. Use Board.BOARD_WIDTH etc.
 
-const BOARD_WIDTH = 48
-const BOARD_HEIGHT = 32
-
-# Deployment zones
-const DEPLOY_1_Y_MIN = 28
-const DEPLOY_1_Y_MAX = 31
-const DEPLOY_2_Y_MIN = 0
-const DEPLOY_2_Y_MAX = 3
+const Board = preload("res://game/board.gd")
+const Targeting = preload("res://game/targeting.gd")
 
 # Scene nodes
 var board_container: Control
@@ -330,8 +327,8 @@ func _recompute_cell_size() -> void:
 	if avail.x <= 0 or avail.y <= 0:
 		return
 	# Fit board into available space, maintaining aspect ratio
-	var cs_x = avail.x / BOARD_WIDTH
-	var cs_y = avail.y / BOARD_HEIGHT
+	var cs_x = avail.x / Board.BOARD_WIDTH
+	var cs_y = avail.y / Board.BOARD_HEIGHT
 	cell_size = min(cs_x, cs_y)
 
 
@@ -536,7 +533,7 @@ func _input(event: InputEvent) -> void:
 		var local_pos = board_container.get_local_mouse_position()
 		var grid = pixel_to_grid(local_pos.x, local_pos.y)
 
-		if grid.x < 0 or grid.x >= BOARD_WIDTH or grid.y < 0 or grid.y >= BOARD_HEIGHT:
+		if not Board.is_in_bounds(grid.x, grid.y):
 			return
 
 		if current_game_state.phase == "placement":
@@ -736,7 +733,7 @@ func _render_order_execute_panel() -> void:
 
 	match order_type:
 		"volley_fire":
-			if unit and not _has_valid_enemy_in_range(unit, unit.base_stats.weapon_range):
+			if unit and not _has_valid_shooting_target(unit):
 				order_execute_instruction.text = "No enemies in range — the volley fizzles."
 				order_execute_confirm_button.text = "Continue (no effect)"
 				order_execute_confirm_button.visible = true
@@ -839,18 +836,26 @@ func _on_execute_confirm_pressed() -> void:
 	_send_execute_order({"x": pending_move_x, "y": pending_move_y})
 
 
+## True if any alive enemy is within Euclidean `reach` of `unit`. No LoS
+## check — used for charge fizzle detection (charge ignores LoS in v17).
+## For shooting fizzle, use `_has_valid_shooting_target` so closest-target
+## + LoS rules match the server.
 func _has_valid_enemy_in_range(unit: Types.UnitState, reach: int) -> bool:
 	if reach <= 0:
 		return false
-	var r_sq: float = float(reach * reach)
 	for u in current_game_state.units:
 		if u.is_dead or u.owner_seat == unit.owner_seat:
 			continue
-		var dx: int = u.x - unit.x
-		var dy: int = u.y - unit.y
-		if float(dx * dx + dy * dy) <= r_sq:
+		if Board.grid_distance(unit.x, unit.y, u.x, u.y) <= reach:
 			return true
 	return false
+
+
+## True if `shooter` has any legal shooting target right now (in range AND
+## with LoS). Delegates to the shared Targeting module so client and server
+## cannot diverge on what counts as a valid target.
+func _has_valid_shooting_target(shooter: Types.UnitState) -> bool:
+	return not Targeting.find_shooting_targets(current_game_state, shooter).is_empty()
 
 
 # =============================================================================
@@ -867,13 +872,10 @@ func _declare_valid_targets() -> Array:
 	# Snob can always self-order
 	results.append(snob)
 	var cmd_range = snob.get_command_range()
-	var cr_sq: float = float(cmd_range * cmd_range)
 	for unit in current_game_state.units:
 		if (unit.owner_seat == my_seat and not unit.is_snob()
 				and not unit.is_dead and not unit.has_ordered):
-			var dx: int = unit.x - snob.x
-			var dy: int = unit.y - snob.y
-			if float(dx * dx + dy * dy) <= cr_sq:
+			if Board.grid_distance(snob.x, snob.y, unit.x, unit.y) <= cmd_range:
 				results.append(unit)
 	return results
 

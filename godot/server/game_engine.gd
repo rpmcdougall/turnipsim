@@ -14,29 +14,14 @@ extends RefCounted
 ##   5. After all Snobs ordered, unordered Followers order themselves
 ##   6. Round ends, advance to next round
 
-# Board constants
-const BOARD_WIDTH: int = 48
-const BOARD_HEIGHT: int = 32
-
-
-## Euclidean distance between two grid cells.
-## All range/movement checks use this instead of Manhattan distance so that
-## diagonal distances are geometrically correct (1 cell = 1 inch).
-static func _grid_distance(x1: int, y1: int, x2: int, y2: int) -> float:
-	var dx: int = x2 - x1
-	var dy: int = y2 - y1
-	return sqrt(float(dx * dx + dy * dy))
-
-# Deployment zones (4 rows each)
-const DEPLOYMENT_ZONE_1_Y_MIN: int = 28  # Bottom (seat 1)
-const DEPLOYMENT_ZONE_1_Y_MAX: int = 31
-const DEPLOYMENT_ZONE_2_Y_MIN: int = 0   # Top (seat 2)
-const DEPLOYMENT_ZONE_2_Y_MAX: int = 3
-
-# Melee bout cap — v17 has no hard limit, but tied bouts could loop forever on
-# whiffing dice. Cap at 3; unresolved ties after the cap end in a draw with no
-# retreat (both sides still take +1 panic per melee-ended rule).
-const MELEE_MAX_BOUTS: int = 3
+# Pure logic modules — all live under game/, all RefCounted, all preloaded
+# (not just class_name) so headless test runs don't depend on the global
+# script class cache being up to date.
+const Board = preload("res://game/board.gd")
+const Targeting = preload("res://game/targeting.gd")
+const Combat = preload("res://game/combat.gd")
+const Panic = preload("res://game/panic.gd")
+const Objectives = preload("res://game/objectives.gd")
 
 
 # =============================================================================
@@ -69,16 +54,16 @@ static func place_unit(state: Types.GameState, unit_id: String, x: int, y: int) 
 		result.error = "Unit already placed"
 		return result
 
-	if x < 0 or x >= BOARD_WIDTH or y < 0 or y >= BOARD_HEIGHT:
+	if x < 0 or x >= Board.BOARD_WIDTH or y < 0 or y >= Board.BOARD_HEIGHT:
 		result.error = "Coordinates out of bounds"
 		return result
 
 	var valid_zone: bool = false
 	if state.active_seat == 1:
-		if y >= DEPLOYMENT_ZONE_1_Y_MIN and y <= DEPLOYMENT_ZONE_1_Y_MAX:
+		if y >= Board.DEPLOYMENT_ZONE_1_Y_MIN and y <= Board.DEPLOYMENT_ZONE_1_Y_MAX:
 			valid_zone = true
 	else:
-		if y >= DEPLOYMENT_ZONE_2_Y_MIN and y <= DEPLOYMENT_ZONE_2_Y_MAX:
+		if y >= Board.DEPLOYMENT_ZONE_2_Y_MIN and y <= Board.DEPLOYMENT_ZONE_2_Y_MAX:
 			valid_zone = true
 
 	if not valid_zone:
@@ -108,7 +93,6 @@ static func place_unit(state: Types.GameState, unit_id: String, x: int, y: int) 
 		"y": y
 	})
 
-	result.success = true
 	result.new_state = new_state
 	result.description = "%s placed at (%d, %d)" % [unit.unit_type, x, y]
 
@@ -146,7 +130,7 @@ static func confirm_placement(state: Types.GameState) -> Types.EngineResult:
 		new_state.active_seat = new_state.initiative_seat
 		# v17 p.22: "Objectives with units deployed within 1" are considered
 		# captured." Run the resolver once deployment is final.
-		_resolve_objective_captures(new_state)
+		Objectives.resolve_objective_captures(new_state)
 		new_state.action_log.append({
 			"round": state.current_round,
 			"action": "orders_phase_started"
@@ -161,7 +145,6 @@ static func confirm_placement(state: Types.GameState) -> Types.EngineResult:
 		})
 		result.description = "Player %d placement confirmed. Player %d's turn." % [state.active_seat, other_seat]
 
-	result.success = true
 	result.new_state = new_state
 
 	return result
@@ -211,7 +194,6 @@ static func select_snob(state: Types.GameState, snob_id: String) -> Types.Engine
 		"snob_type": snob.unit_type
 	})
 
-	result.success = true
 	result.new_state = new_state
 	result.description = "%s Made Ready" % snob.unit_type
 
@@ -259,7 +241,7 @@ static func declare_order(state: Types.GameState, unit_id: String, order_type: S
 		if unit.is_snob():
 			result.error = "Cannot order another Snob"
 			return result
-		var distance = _grid_distance(snob.x, snob.y, unit.x, unit.y)
+		var distance = Board.grid_distance(snob.x, snob.y, unit.x, unit.y)
 		if distance > snob.get_command_range():
 			result.error = "Unit out of command range (%.1f > %d)" % [distance, snob.get_command_range()]
 			return result
@@ -292,7 +274,7 @@ static func declare_order(state: Types.GameState, unit_id: String, order_type: S
 	var blundered = false
 	if not ordering_self and blunder_die == 1:
 		blundered = true
-		var new_unit = _find_unit_in(new_state, unit_id)
+		var new_unit = _find_unit(new_state, unit_id)
 		new_unit.panic_tokens = mini(new_unit.panic_tokens + 1, 6)
 
 	new_state.order_phase = "order_execute"
@@ -327,7 +309,6 @@ static func declare_order(state: Types.GameState, unit_id: String, order_type: S
 		"move_bonus": move_bonus
 	})
 
-	result.success = true
 	result.new_state = new_state
 	result.dice_rolled = [blunder_die] + move_dice
 	result.description = "%s ordered to %s%s (move bonus: +%d)" % [
@@ -385,7 +366,7 @@ static func declare_self_order(state: Types.GameState, unit_id: String, order_ty
 	# Always blunder check for self-ordering followers
 	var blundered = (blunder_die == 1)
 	if blundered:
-		var new_unit = _find_unit_in(new_state, unit_id)
+		var new_unit = _find_unit(new_state, unit_id)
 		new_unit.panic_tokens = mini(new_unit.panic_tokens + 1, 6)
 
 	new_state.order_phase = "order_execute"
@@ -417,7 +398,6 @@ static func declare_self_order(state: Types.GameState, unit_id: String, order_ty
 		"move_bonus": move_bonus
 	})
 
-	result.success = true
 	result.new_state = new_state
 	result.dice_rolled = [blunder_die] + move_dice
 	var blunder_text = " [BLUNDERED!]" if blundered else ""
@@ -486,7 +466,6 @@ static func _execute_volley_fire(state: Types.GameState, unit: Types.UnitState, 
 			"unit_type": unit.unit_type,
 			"blundered": state.current_order_blundered
 		})
-		result.success = true
 		result.new_state = fizzled_state
 		result.description = "%s volley fire fizzled (no targets in range)" % unit.unit_type
 		return result
@@ -498,7 +477,7 @@ static func _execute_volley_fire(state: Types.GameState, unit: Types.UnitState, 
 		return result
 
 	# LoS + range + closest-target validation
-	var target_error = _is_valid_shooting_target(state, unit, target)
+	var target_error = Targeting.is_valid_shooting_target(state, unit, target)
 	if target_error != "":
 		result.error = target_error
 		return result
@@ -508,10 +487,10 @@ static func _execute_volley_fire(state: Types.GameState, unit: Types.UnitState, 
 	var retreat_die: int = params.get("retreat_die", 1)
 
 	var new_state = _clone_state(state)
-	var new_unit = _find_unit_in(new_state, unit.id)
-	var new_target = _find_unit_in(new_state, target_id)
+	var new_unit = _find_unit(new_state, unit.id)
+	var new_target = _find_unit(new_state, target_id)
 
-	var combat = _resolve_shooting_engagement(new_unit, new_target, dice_results, inaccuracy_mod)
+	var combat = Combat.resolve_shooting_engagement(new_unit, new_target, dice_results, inaccuracy_mod)
 	if combat["error"] != "":
 		result.error = combat["error"]
 		return result
@@ -519,9 +498,9 @@ static func _execute_volley_fire(state: Types.GameState, unit: Types.UnitState, 
 	# Loser retreats (v17 core p.15). Tie → no retreat.
 	var retreat: Dictionary = {}
 	if not combat["tie"] and combat["loser_id"] != "":
-		var loser = _find_unit_in(new_state, combat["loser_id"])
+		var loser = _find_unit(new_state, combat["loser_id"])
 		if loser and not loser.is_dead:
-			retreat = _execute_retreat(new_state, combat["loser_id"], retreat_die)
+			retreat = Panic.execute_retreat(new_state, combat["loser_id"], retreat_die)
 
 	_advance_after_order(new_state)
 
@@ -547,7 +526,6 @@ static func _execute_volley_fire(state: Types.GameState, unit: Types.UnitState, 
 		"retreat": retreat,
 	})
 
-	result.success = true
 	result.new_state = new_state
 	result.dice_rolled = dice_results
 	var blunder_text = " (blundered, no bonus)" if state.current_order_blundered else " (-1 Inaccuracy)"
@@ -586,7 +564,7 @@ static func _execute_move_and_shoot(state: Types.GameState, unit: Types.UnitStat
 	var target_id = params.get("target_id", "")
 
 	# Movement validation
-	var move_error = _validate_move(state, unit, x, y)
+	var move_error = Board.validate_move(state, unit, x, y)
 	if move_error != "":
 		result.error = move_error
 		return result
@@ -595,13 +573,13 @@ static func _execute_move_and_shoot(state: Types.GameState, unit: Types.UnitStat
 	var max_move = unit.base_stats.movement
 	if state.current_order_blundered:
 		max_move = state.current_order_move_bonus  # D6 result stored during declare
-	var distance = _grid_distance(unit.x, unit.y, x, y)
+	var distance = Board.grid_distance(unit.x, unit.y, x, y)
 	if distance > max_move:
 		result.error = "Out of movement range (max %d)" % max_move
 		return result
 
 	var new_state = _clone_state(state)
-	var new_unit = _find_unit_in(new_state, unit.id)
+	var new_unit = _find_unit(new_state, unit.id)
 
 	# Move the unit
 	new_unit.x = x
@@ -622,20 +600,20 @@ static func _execute_move_and_shoot(state: Types.GameState, unit: Types.UnitStat
 	var fired: bool = false
 	var new_target: Types.UnitState = null
 	if target_id != "":
-		new_target = _find_unit_in(new_state, target_id)
+		new_target = _find_unit(new_state, target_id)
 		if new_target and not new_target.is_dead and new_target.owner_seat != unit.owner_seat:
 			# Validate from post-move position: range + LoS + closest-target
-			var shoot_error = _is_valid_shooting_target_from(new_state, new_unit, new_target, x, y)
+			var shoot_error = Targeting.is_valid_shooting_target_from(new_state, new_unit, new_target, x, y)
 			if shoot_error == "" and not new_unit.has_powder_smoke:
-				combat = _resolve_shooting_engagement(new_unit, new_target, dice_results, 0)
+				combat = Combat.resolve_shooting_engagement(new_unit, new_target, dice_results, 0)
 				if combat["error"] != "":
 					result.error = combat["error"]
 					return result
 				fired = true
 				if not combat["tie"] and combat["loser_id"] != "":
-					var loser = _find_unit_in(new_state, combat["loser_id"])
+					var loser = _find_unit(new_state, combat["loser_id"])
 					if loser and not loser.is_dead:
-						retreat = _execute_retreat(new_state, combat["loser_id"], retreat_die)
+						retreat = Panic.execute_retreat(new_state, combat["loser_id"], retreat_die)
 
 	_advance_after_order(new_state)
 
@@ -661,7 +639,6 @@ static func _execute_move_and_shoot(state: Types.GameState, unit: Types.UnitStat
 		"retreat": retreat,
 	})
 
-	result.success = true
 	result.new_state = new_state
 	result.dice_rolled = dice_results
 	var shoot_text = ""
@@ -683,20 +660,20 @@ static func _execute_march(state: Types.GameState, unit: Types.UnitState, params
 	var x = params.get("x", -1)
 	var y = params.get("y", -1)
 
-	var move_error = _validate_move(state, unit, x, y)
+	var move_error = Board.validate_move(state, unit, x, y)
 	if move_error != "":
 		result.error = move_error
 		return result
 
 	# March range: M + move_bonus (2D6 or 1D6 if blundered)
 	var max_move = unit.base_stats.movement + state.current_order_move_bonus
-	var distance = _grid_distance(unit.x, unit.y, x, y)
+	var distance = Board.grid_distance(unit.x, unit.y, x, y)
 	if distance > max_move:
 		result.error = "Out of march range (max %d = M%d + %d)" % [max_move, unit.base_stats.movement, state.current_order_move_bonus]
 		return result
 
 	var new_state = _clone_state(state)
-	var new_unit = _find_unit_in(new_state, unit.id)
+	var new_unit = _find_unit(new_state, unit.id)
 	new_unit.x = x
 	new_unit.y = y
 
@@ -714,7 +691,6 @@ static func _execute_march(state: Types.GameState, unit: Types.UnitState, params
 		"blundered": state.current_order_blundered
 	})
 
-	result.success = true
 	result.new_state = new_state
 	result.description = "March! %s to (%d,%d) (M%d + %d)" % [
 		unit.unit_type, x, y, unit.base_stats.movement, state.current_order_move_bonus
@@ -741,7 +717,6 @@ static func _execute_charge(state: Types.GameState, unit: Types.UnitState, param
 			"unit_type": unit.unit_type,
 			"blundered": state.current_order_blundered
 		})
-		result.success = true
 		result.new_state = fizzled_state
 		result.description = "%s charge fizzled (no targets in range)" % unit.unit_type
 		return result
@@ -759,45 +734,45 @@ static func _execute_charge(state: Types.GameState, unit: Types.UnitState, param
 		return result
 
 	# LoS check (v17 p.16: must have LoS to charge target)
-	if not _has_line_of_sight(state, unit.x, unit.y, target.x, target.y):
+	if not Targeting.has_line_of_sight(state, unit.x, unit.y, target.x, target.y):
 		result.error = "No line of sight to charge target"
 		return result
 
 	# Charge range: M + move_bonus. Must end adjacent (distance = 1) to target.
 	var charge_range = unit.base_stats.movement + state.current_order_move_bonus
-	var target_distance = _grid_distance(unit.x, unit.y, target.x, target.y)
+	var target_distance = Board.grid_distance(unit.x, unit.y, target.x, target.y)
 	if target_distance > charge_range:
 		result.error = "Target out of charge range (distance %.1f, max %d)" % [target_distance, charge_range]
 		return result
 
 	# Find an adjacent cell to the target to move to
-	var charge_dest = _find_adjacent_cell(state, unit, target)
+	var charge_dest = Targeting.find_adjacent_cell(state, unit, target)
 	if charge_dest.x == -1:
 		result.error = "No open cell adjacent to target"
 		return result
 
 	# Verify the adjacent cell is within charge range
-	var move_distance = _grid_distance(unit.x, unit.y, charge_dest.x, charge_dest.y)
+	var move_distance = Board.grid_distance(unit.x, unit.y, charge_dest.x, charge_dest.y)
 	if move_distance > charge_range:
 		result.error = "Cannot reach target (need %.1f, have %d)" % [move_distance, charge_range]
 		return result
 
 	var new_state = _clone_state(state)
-	var new_unit = _find_unit_in(new_state, unit.id)
-	var new_target = _find_unit_in(new_state, target_id)
+	var new_unit = _find_unit(new_state, unit.id)
+	var new_target = _find_unit(new_state, target_id)
 
 	# v17 core p.16: target takes panic test when charged.
 	var panic_die: int = params.get("panic_die", 1)
 	var fearless_die: int = params.get("fearless_die", 1)
 	var retreat_die: int = params.get("retreat_die", 1)
-	var panic = _panic_test(new_target, panic_die, fearless_die)
+	var panic = Panic.panic_test(new_target, panic_die, fearless_die)
 
 	if not panic["passed"]:
 		# Target failed panic test — gains +1 panic token (v17 p.19),
 		# then retreats away from nearest enemy. Charger moves to the
 		# now-vacated adjacent cell. No melee.
 		new_target.panic_tokens = mini(new_target.panic_tokens + 1, 6)
-		var retreat = _execute_retreat(new_state, target_id, retreat_die)
+		var retreat = Panic.execute_retreat(new_state, target_id, retreat_die)
 
 		# Charger advances to adjacent cell (target may have vacated it,
 		# or stayed put if Stubborn Fanatics).
@@ -822,7 +797,6 @@ static func _execute_charge(state: Types.GameState, unit: Types.UnitState, param
 			"hits": 0, "saves": 0, "unsaved_wounds": 0
 		})
 
-		result.success = true
 		result.new_state = new_state
 		result.dice_rolled = [panic_die, fearless_die]
 		var retreat_text = ""
@@ -843,7 +817,7 @@ static func _execute_charge(state: Types.GameState, unit: Types.UnitState, param
 	new_unit.y = charge_dest.y
 
 	# Resolve melee as bouts (v17 core p.18)
-	var combat = _resolve_melee(new_unit, new_target, dice_results)
+	var combat = Combat.resolve_melee(new_unit, new_target, dice_results)
 	if combat["error"] != "":
 		result.error = combat["error"]
 		return result
@@ -858,9 +832,9 @@ static func _execute_charge(state: Types.GameState, unit: Types.UnitState, param
 	var retreat: Dictionary = {}
 	var charger_retreated: bool = false
 	if not combat["draw"] and combat["loser_id"] != "":
-		var loser = _find_unit_in(new_state, combat["loser_id"])
+		var loser = _find_unit(new_state, combat["loser_id"])
 		if loser and not loser.is_dead:
-			retreat = _execute_retreat(new_state, combat["loser_id"], retreat_die)
+			retreat = Panic.execute_retreat(new_state, combat["loser_id"], retreat_die)
 			if combat["loser_id"] == new_unit.id:
 				charger_retreated = true
 
@@ -899,7 +873,6 @@ static func _execute_charge(state: Types.GameState, unit: Types.UnitState, param
 		"counter_unsaved_wounds": def_wounds_total,
 	})
 
-	result.success = true
 	result.new_state = new_state
 	result.dice_rolled = [panic_die, fearless_die] + dice_results
 	var panic_text = ""
@@ -942,16 +915,16 @@ static func _execute_charge(state: Types.GameState, unit: Types.UnitState, param
 ## Marks units as ordered, switches players, transitions phases.
 static func _advance_after_order(state: Types.GameState) -> void:
 	# Re-resolve objective control after any positional or unit-death change.
-	_resolve_objective_captures(state)
+	Objectives.resolve_objective_captures(state)
 
 	# Mark the ordered unit
-	var unit = _find_unit_in(state, state.current_order_unit_id)
+	var unit = _find_unit(state, state.current_order_unit_id)
 	if unit:
 		unit.has_ordered = true
 
 	# Mark the snob (if one was commanding)
 	if state.current_snob_id != "":
-		var snob = _find_unit_in(state, state.current_snob_id)
+		var snob = _find_unit(state, state.current_snob_id)
 		if snob:
 			snob.has_ordered = true
 
@@ -1016,770 +989,17 @@ static func _end_round(state: Types.GameState) -> void:
 
 
 # =============================================================================
-# PANIC TEST
-# =============================================================================
-
-## Check whether a unit is currently Fearless (3+ to ignore forced retreat).
-## Sources: "fearless" special rule (Brutes), or "safety_in_numbers" with 8+
-## models alive (Fodder).
-static func _is_fearless(unit: Types.UnitState) -> bool:
-	if "fearless" in unit.special_rules:
-		return true
-	if "safety_in_numbers" in unit.special_rules and unit.model_count >= 8:
-		return true
-	return false
-
-
-## Panic test per v17 core p.19.
-## Roll D6 + panic_tokens: ≤6 pass, ≥7 fail (must retreat).
-## Natural 1 always passes. 0 tokens auto-pass (skip test).
-## Fearless units that fail get a second chance: fearless_die 3+ = override to pass.
-##
-## Returns { passed, roll, total, auto_passed, fearless_override, used_fearless }.
-## Does NOT modify unit state — caller applies consequences.
-static func _panic_test(unit: Types.UnitState, panic_die: int, fearless_die: int) -> Dictionary:
-	var result = {
-		"passed": true,
-		"roll": panic_die,
-		"total": 0,
-		"auto_passed": false,
-		"fearless_override": false,
-		"used_fearless": false,
-	}
-
-	# 0 tokens = auto-pass (v17: "units with zero panic tokens can skip the test")
-	if unit.panic_tokens == 0:
-		result["auto_passed"] = true
-		return result
-
-	# Natural 1 always passes
-	if panic_die == 1:
-		return result
-
-	var total: int = panic_die + unit.panic_tokens
-	result["total"] = total
-
-	if total <= 6:
-		# Passed normally
-		return result
-
-	# Failed — check Fearless override
-	if _is_fearless(unit):
-		result["used_fearless"] = true
-		if fearless_die >= 3:
-			result["fearless_override"] = true
-			return result
-
-	result["passed"] = false
-	return result
-
-
-# =============================================================================
-# RETREAT
-# =============================================================================
-
-## Execute retreat for a unit. Mutates state in place.
-## v17 core p.20: move directly away from closest enemy, D6 + 2" per panic
-## token. Board edge = unit destroyed. Stubborn Fanatics never retreat.
-##
-## `retreat_die` is a pre-rolled D6 supplied by the caller (1..6). Pass 1 for
-## the minimum distance when a test intentionally suppresses the D6 component.
-##
-## Returns { retreated, destroyed, from_x, from_y, to_x, to_y, distance,
-##           retreat_die, stubborn_held, no_enemy }.
-## DT tests for crossing Followers deferred to terrain system (#58).
-static func _execute_retreat(state: Types.GameState, unit_id: String, retreat_die: int) -> Dictionary:
-	var unit = _find_unit_in(state, unit_id)
-	var result = {
-		"retreated": false,
-		"destroyed": false,
-		"from_x": unit.x, "from_y": unit.y,
-		"to_x": unit.x, "to_y": unit.y,
-		"distance": 0,
-		"retreat_die": retreat_die,
-		"stubborn_held": false,
-		"no_enemy": false,
-	}
-
-	if not unit or unit.is_dead:
-		return result
-
-	# Stubborn Fanatics: never retreat (Stump Gun)
-	if "stubborn_fanatics" in unit.special_rules:
-		result["stubborn_held"] = true
-		return result
-
-	# Retreat distance: D6 + 2" per panic token (v17 core p.20).
-	var retreat_dist: int = retreat_die + unit.panic_tokens * 2
-	result["distance"] = retreat_dist
-
-	# Direction: away from nearest alive enemy
-	var nearest_enemy = _find_nearest_enemy(state, unit)
-	if not nearest_enemy:
-		# No enemies alive — nowhere to retreat from. Stay put.
-		result["no_enemy"] = true
-		return result
-
-	var dx: float = float(unit.x - nearest_enemy.x)
-	var dy: float = float(unit.y - nearest_enemy.y)
-	var dist: float = sqrt(dx * dx + dy * dy)
-	if dist < 0.001:
-		# On top of enemy (shouldn't happen). Default retreat direction: toward own deployment zone.
-		dy = 1.0 if unit.owner_seat == 1 else -1.0
-		dx = 0.0
-		dist = 1.0
-
-	# Normalize direction
-	dx /= dist
-	dy /= dist
-
-	# Ideal retreat destination
-	var ideal_x: float = float(unit.x) + dx * float(retreat_dist)
-	var ideal_y: float = float(unit.y) + dy * float(retreat_dist)
-	var target_x: int = clampi(roundi(ideal_x), 0, BOARD_WIDTH - 1)
-	var target_y: int = clampi(roundi(ideal_y), 0, BOARD_HEIGHT - 1)
-
-	# Board edge check: if the ideal position is off the board, unit is destroyed.
-	if roundi(ideal_x) < 0 or roundi(ideal_x) >= BOARD_WIDTH or roundi(ideal_y) < 0 or roundi(ideal_y) >= BOARD_HEIGHT:
-		unit.is_dead = true
-		unit.model_count = 0
-		unit.x = -1
-		unit.y = -1
-		result["retreated"] = true
-		result["destroyed"] = true
-		result["to_x"] = -1
-		result["to_y"] = -1
-		return result
-
-	# Find the best valid cell near the target
-	var dest = _find_retreat_cell(state, unit, target_x, target_y)
-	if dest.x == -1:
-		# No valid cell found — stay in place (edge case, shouldn't normally happen)
-		return result
-
-	unit.x = dest.x
-	unit.y = dest.y
-	result["retreated"] = true
-	result["to_x"] = dest.x
-	result["to_y"] = dest.y
-	return result
-
-
-## Find the nearest alive enemy unit to the given unit.
-static func _find_nearest_enemy(state: Types.GameState, unit: Types.UnitState) -> Types.UnitState:
-	var best: Types.UnitState = null
-	var best_dist: float = 99999.0
-	for u in state.units:
-		if u.is_dead or u.owner_seat == unit.owner_seat:
-			continue
-		if u.x < 0 or u.y < 0:
-			continue
-		var d := _grid_distance(unit.x, unit.y, u.x, u.y)
-		if d < best_dist:
-			best_dist = d
-			best = u
-	return best
-
-
-## Find a valid retreat destination cell near (target_x, target_y).
-## Searches the target cell first, then spirals outward. Returns Vector2i(-1,-1)
-## if nothing found within a reasonable radius.
-static func _find_retreat_cell(state: Types.GameState, unit: Types.UnitState, target_x: int, target_y: int) -> Vector2i:
-	# Try the ideal cell first
-	if _is_valid_retreat_dest(state, unit, target_x, target_y):
-		return Vector2i(target_x, target_y)
-
-	# Spiral outward looking for an alternative
-	for radius in range(1, 6):
-		var best = Vector2i(-1, -1)
-		var best_dist: float = 99999.0
-		for dy in range(-radius, radius + 1):
-			for dx in range(-radius, radius + 1):
-				if abs(dx) != radius and abs(dy) != radius:
-					continue  # Skip inner cells already checked
-				var cx: int = target_x + dx
-				var cy: int = target_y + dy
-				if _is_valid_retreat_dest(state, unit, cx, cy):
-					var d := _grid_distance(target_x, target_y, cx, cy)
-					if d < best_dist:
-						best_dist = d
-						best = Vector2i(cx, cy)
-		if best.x != -1:
-			return best
-
-	return Vector2i(-1, -1)
-
-
-## Is this cell a valid retreat destination?
-static func _is_valid_retreat_dest(state: Types.GameState, unit: Types.UnitState, x: int, y: int) -> bool:
-	if x < 0 or x >= BOARD_WIDTH or y < 0 or y >= BOARD_HEIGHT:
-		return false
-	# Can't land on an occupied cell
-	for u in state.units:
-		if not u.is_dead and u.id != unit.id and u.x == x and u.y == y:
-			return false
-	# Can't land on an objective (v17 p.22)
-	if _is_objective_at(state, x, y):
-		return false
-	return true
-
-
-# =============================================================================
-# COMBAT RESOLUTION HELPERS
-# =============================================================================
-
-## Resolve one side's shooting attacks. Consumes dice from the pool starting
-## at `offset`. Does NOT mutate either unit — caller applies wounds, smoke,
-## and panic tokens after both sides have rolled. Returns
-## { hits, saves, unsaved_wounds, dice_used, error }.
-static func _resolve_shooting_side(attacker: Types.UnitState, target: Types.UnitState, dice_results: Array, offset: int, inaccuracy_mod: int) -> Dictionary:
-	var num_attacks = attacker.model_count
-	var needed_dice = num_attacks * 2
-	if dice_results.size() - offset < needed_dice:
-		return {"hits": 0, "saves": 0, "unsaved_wounds": 0, "dice_used": 0,
-				"error": "Not enough dice (need %d at offset %d, have %d)" % [needed_dice, offset, dice_results.size() - offset]}
-
-	var inaccuracy = maxi(attacker.base_stats.inaccuracy + inaccuracy_mod, 2)
-	var vulnerability = target.base_stats.vulnerability
-
-	# Equipment modifiers
-	if attacker.equipment == "missile":
-		vulnerability = maxi(vulnerability - 2, 2)
-
-	var hits = 0
-	var saves = 0
-	var unsaved_wounds = 0
-
-	for i in range(num_attacks):
-		var inac_roll = dice_results[offset + i]
-		var vuln_roll = dice_results[offset + num_attacks + i]
-		if inac_roll >= inaccuracy:
-			hits += 1
-			if vuln_roll >= vulnerability:
-				saves += 1
-			else:
-				unsaved_wounds += 1
-
-	return {"hits": hits, "saves": saves, "unsaved_wounds": unsaved_wounds,
-			"dice_used": needed_dice, "error": ""}
-
-
-## Is the target eligible to return fire at the shooter? v17 core p.13:
-## target must have a ranged weapon, no powder smoke, and the shooter must
-## be within the target's weapon range. Casualties from the primary strike
-## do NOT suppress return fire (resolved from pre-engagement state).
-static func _can_return_fire(target: Types.UnitState, shooter: Types.UnitState) -> bool:
-	if target.is_dead or shooter.is_dead:
-		return false
-	if target.base_stats.weapon_range <= 0:
-		return false
-	if target.has_powder_smoke:
-		return false
-	var dist := _grid_distance(target.x, target.y, shooter.x, shooter.y)
-	return dist <= target.base_stats.weapon_range
-
-
-## Resolve a shooting engagement (v17 core p.13). Both sides roll against
-## pre-engagement model counts — casualties from the primary strike do not
-## suppress return fire. Wounds, smoke, and hit-panic tokens applied after
-## both sides have rolled.
-##
-## Winner = side that dealt more unsaved wounds. Tie = no winner, no retreat
-## (caller still runs _execute_retreat only when winner/loser set).
-##
-## Returns {
-##   att_hits, att_saves, att_wounds,
-##   def_hits, def_saves, def_wounds,
-##   return_fire_fired: bool,
-##   winner_id, loser_id,           # "" on tie
-##   tie: bool,
-##   dice_used: int,
-##   error: String
-## }
-static func _resolve_shooting_engagement(attacker: Types.UnitState, target: Types.UnitState, dice_results: Array, attacker_inaccuracy_mod: int) -> Dictionary:
-	var result = {
-		"att_hits": 0, "att_saves": 0, "att_wounds": 0,
-		"def_hits": 0, "def_saves": 0, "def_wounds": 0,
-		"return_fire_fired": false,
-		"winner_id": "", "loser_id": "",
-		"tie": false,
-		"dice_used": 0,
-		"error": "",
-	}
-
-	if attacker.is_dead or target.is_dead:
-		result["error"] = "Cannot resolve shooting: one side already dead"
-		return result
-
-	# Attacker rolls first (dice pool laid out attacker-then-defender).
-	var att = _resolve_shooting_side(attacker, target, dice_results, 0, attacker_inaccuracy_mod)
-	if att["error"] != "":
-		result["error"] = att["error"]
-		return result
-	result["att_hits"] = att["hits"]
-	result["att_saves"] = att["saves"]
-	result["att_wounds"] = att["unsaved_wounds"]
-
-	var offset: int = att["dice_used"]
-
-	# Return fire eligibility checked from pre-engagement state.
-	var can_return = _can_return_fire(target, attacker)
-	if can_return:
-		# Defender return fire — inaccuracy_mod=0 (no volley-fire bonus on return).
-		var defn = _resolve_shooting_side(target, attacker, dice_results, offset, 0)
-		if defn["error"] != "":
-			result["error"] = defn["error"]
-			return result
-		result["def_hits"] = defn["hits"]
-		result["def_saves"] = defn["saves"]
-		result["def_wounds"] = defn["unsaved_wounds"]
-		result["return_fire_fired"] = true
-		offset += defn["dice_used"]
-
-	result["dice_used"] = offset
-
-	# Apply wounds simultaneously (casualties don't suppress return fire).
-	_apply_wounds(target, result["att_wounds"])
-	if result["return_fire_fired"]:
-		_apply_wounds(attacker, result["def_wounds"])
-
-	# Panic tokens from taking hits (any hits, saved or not).
-	if result["att_hits"] > 0 and not target.is_dead:
-		target.panic_tokens = mini(target.panic_tokens + 1, 6)
-	if result["def_hits"] > 0 and not attacker.is_dead:
-		attacker.panic_tokens = mini(attacker.panic_tokens + 1, 6)
-
-	# Powder smoke: whichever side fired with black_powder gets a smoke token.
-	if attacker.equipment == "black_powder":
-		attacker.has_powder_smoke = true
-	if result["return_fire_fired"] and target.equipment == "black_powder":
-		target.has_powder_smoke = true
-
-	# Winner / loser / tie — decided by total unsaved wounds dealt.
-	if result["att_wounds"] > result["def_wounds"]:
-		result["winner_id"] = attacker.id
-		result["loser_id"] = target.id
-	elif result["def_wounds"] > result["att_wounds"]:
-		result["winner_id"] = target.id
-		result["loser_id"] = attacker.id
-	else:
-		result["tie"] = true
-
-	return result
-
-
-## Resolve one side's attacks in a melee bout. Consumes dice from the pool
-## starting at `offset`. Returns { hits, saves, unsaved_wounds, dice_used, error }.
-## Mutates `defender` via _apply_wounds.
-static func _resolve_bout_side(attacker: Types.UnitState, defender: Types.UnitState, dice_results: Array, offset: int) -> Dictionary:
-	var attacks_per_model = attacker.base_stats.attacks
-	var inaccuracy = attacker.base_stats.inaccuracy
-	var vulnerability = defender.base_stats.vulnerability
-
-	# Close combat equipment reduces inaccuracy by 1 (min 2)
-	if attacker.equipment == "close_combat":
-		inaccuracy = maxi(inaccuracy - 1, 2)
-
-	var num_attacks = attacker.model_count * attacks_per_model
-	var needed_dice = num_attacks * 2
-	if dice_results.size() - offset < needed_dice:
-		return {"hits": 0, "saves": 0, "unsaved_wounds": 0, "dice_used": 0,
-				"error": "Not enough dice (need %d at offset %d, have %d)" % [needed_dice, offset, dice_results.size() - offset]}
-
-	var hits = 0
-	var saves = 0
-	var unsaved_wounds = 0
-
-	for i in range(num_attacks):
-		var inac_roll = dice_results[offset + i]
-		var vuln_roll = dice_results[offset + num_attacks + i]
-		if inac_roll >= inaccuracy:
-			hits += 1
-			if vuln_roll >= vulnerability:
-				saves += 1
-			else:
-				unsaved_wounds += 1
-
-	_apply_wounds(defender, unsaved_wounds)
-
-	return {"hits": hits, "saves": saves, "unsaved_wounds": unsaved_wounds,
-			"dice_used": needed_dice, "error": ""}
-
-
-## Worst-case dice pool size for a full melee between two units.
-## Attacker strikes + defender counter-strikes, each at 2 dice per attack,
-## across up to MELEE_MAX_BOUTS. Callers should supply at least this many.
-static func _melee_dice_budget(attacker: Types.UnitState, defender: Types.UnitState) -> int:
-	var per_bout = (attacker.model_count * attacker.base_stats.attacks * 2) \
-		+ (defender.model_count * defender.base_stats.attacks * 2)
-	return per_bout * MELEE_MAX_BOUTS
-
-
-## Resolve a melee engagement as bouts (v17 core p.18). Mutates both units
-## in place via wound application. Does NOT apply post-melee panic tokens or
-## trigger retreat — caller handles those so it can integrate with state.
-##
-## Each bout: attacker strikes → defender removes casualties → if defender
-## still alive, defender counter-strikes → attacker removes casualties.
-## Winner = side that dealt more unsaved wounds that bout. Tie → next bout.
-## Hard cap at MELEE_MAX_BOUTS; if still tied at the cap, draw (no retreat).
-##
-## Returns {
-##   bouts: [{atk_hits, atk_saves, atk_wounds, def_hits, def_saves, def_wounds}...],
-##   winner_id, loser_id,  # "" on draw or if one side was already dead
-##   draw: bool,           # true only when cap hit with no winner
-##   dice_used: int,
-##   error: String
-## }
-static func _resolve_melee(attacker: Types.UnitState, target: Types.UnitState, dice_results: Array) -> Dictionary:
-	var summary = {
-		"bouts": [],
-		"winner_id": "",
-		"loser_id": "",
-		"draw": false,
-		"dice_used": 0,
-		"error": "",
-	}
-
-	if attacker.is_dead or target.is_dead:
-		summary["error"] = "Cannot resolve melee: one side already dead"
-		return summary
-
-	var offset: int = 0
-
-	for bout_idx in range(MELEE_MAX_BOUTS):
-		var bout = {
-			"atk_hits": 0, "atk_saves": 0, "atk_wounds": 0,
-			"def_hits": 0, "def_saves": 0, "def_wounds": 0,
-		}
-
-		# Attacker strikes first
-		var atk = _resolve_bout_side(attacker, target, dice_results, offset)
-		if atk["error"] != "":
-			summary["error"] = atk["error"]
-			return summary
-		offset += atk["dice_used"]
-		bout["atk_hits"] = atk["hits"]
-		bout["atk_saves"] = atk["saves"]
-		bout["atk_wounds"] = atk["unsaved_wounds"]
-
-		# Target wiped out before counter-attack
-		if target.is_dead:
-			summary["bouts"].append(bout)
-			summary["winner_id"] = attacker.id
-			summary["loser_id"] = target.id
-			summary["dice_used"] = offset
-			return summary
-
-		# Defender counter-strikes
-		var def = _resolve_bout_side(target, attacker, dice_results, offset)
-		if def["error"] != "":
-			summary["error"] = def["error"]
-			return summary
-		offset += def["dice_used"]
-		bout["def_hits"] = def["hits"]
-		bout["def_saves"] = def["saves"]
-		bout["def_wounds"] = def["unsaved_wounds"]
-		summary["bouts"].append(bout)
-
-		# Attacker wiped out — defender wins the bout trivially
-		if attacker.is_dead:
-			summary["winner_id"] = target.id
-			summary["loser_id"] = attacker.id
-			summary["dice_used"] = offset
-			return summary
-
-		# Both alive — decide the bout
-		if bout["atk_wounds"] > bout["def_wounds"]:
-			summary["winner_id"] = attacker.id
-			summary["loser_id"] = target.id
-			summary["dice_used"] = offset
-			return summary
-		if bout["def_wounds"] > bout["atk_wounds"]:
-			summary["winner_id"] = target.id
-			summary["loser_id"] = attacker.id
-			summary["dice_used"] = offset
-			return summary
-		# Tie → next bout
-
-	# Cap reached with no decisive bout — draw.
-	summary["draw"] = true
-	summary["dice_used"] = offset
-	return summary
-
-
-# =============================================================================
-# VICTORY CONDITION
-# =============================================================================
-
-## Check for victory condition.
-static func check_victory(state: Types.GameState) -> Dictionary:
-	var units_total_1: int = 0
-	var units_total_2: int = 0
-	var units_alive_1: int = 0
-	var units_alive_2: int = 0
-
-	for unit in state.units:
-		if unit.owner_seat == 1:
-			units_total_1 += 1
-			if not unit.is_dead:
-				units_alive_1 += 1
-		else:
-			units_total_2 += 1
-			if not unit.is_dead:
-				units_alive_2 += 1
-
-	# Solo mode: one side has no units at all — no victory check
-	if units_total_1 == 0 or units_total_2 == 0:
-		return {"winner": 0, "reason": ""}
-
-	if units_alive_1 == 0 and units_alive_2 > 0:
-		return {"winner": 2, "reason": "Player 1 eliminated"}
-	if units_alive_2 == 0 and units_alive_1 > 0:
-		return {"winner": 1, "reason": "Player 2 eliminated"}
-	if units_alive_1 == 0 and units_alive_2 == 0:
-		return {"winner": 0, "reason": "Draw (both eliminated)"}
-
-	# Headless Chicken: all Snobs dead = instant loss
-	var snobs_alive_1 = 0
-	var snobs_alive_2 = 0
-	for unit in state.units:
-		if not unit.is_dead and unit.is_snob():
-			if unit.owner_seat == 1:
-				snobs_alive_1 += 1
-			else:
-				snobs_alive_2 += 1
-
-	if snobs_alive_1 == 0 and snobs_alive_2 > 0:
-		return {"winner": 2, "reason": "Player 1 lost all Snobs (Headless Chicken)"}
-	if snobs_alive_2 == 0 and snobs_alive_1 > 0:
-		return {"winner": 1, "reason": "Player 2 lost all Snobs (Headless Chicken)"}
-
-	# Round limit reached: v17 objective scoring (core p.22, scenarios p.23+).
-	# "The player who controls the most objective markers at the end of the
-	# final round is the victor." Ties go straight to draw — no secondary
-	# model-count fallback in the rules.
-	if state.current_round > state.max_rounds:
-		var objectives_1: int = 0
-		var objectives_2: int = 0
-		for obj in state.objectives:
-			if obj.captured_by == 1:
-				objectives_1 += 1
-			elif obj.captured_by == 2:
-				objectives_2 += 1
-		if objectives_1 > objectives_2:
-			return {"winner": 1, "reason": "Player 1 controls %d objective(s) to %d" % [objectives_1, objectives_2]}
-		if objectives_2 > objectives_1:
-			return {"winner": 2, "reason": "Player 2 controls %d objective(s) to %d" % [objectives_2, objectives_1]}
-		return {"winner": 0, "reason": "Objectives tied %d–%d (Draw)" % [objectives_1, objectives_2]}
-
-	return {"winner": 0, "reason": ""}
-
-
-# =============================================================================
-# LINE OF SIGHT + TARGETING
-# =============================================================================
-
-## Supercover line-of-sight check between two grid cells.
-## Returns true if no alive non-Snob unit (except the two endpoints) occupies
-## any cell the line passes through. Snobs never block LoS (v17 p.5).
-## Both endpoints are excluded from the blocker check.
-static func _has_line_of_sight(state: Types.GameState, from_x: int, from_y: int, to_x: int, to_y: int) -> bool:
-	# Build a set of occupied cells that block LoS (alive non-Snob Followers).
-	# Exclude the two endpoint cells.
-	var blockers: Dictionary = {}  # "x,y" -> true
-	for u in state.units:
-		if u.is_dead or u.is_snob():
-			continue
-		if u.x < 0 or u.y < 0:
-			continue
-		if (u.x == from_x and u.y == from_y) or (u.x == to_x and u.y == to_y):
-			continue
-		blockers["%d,%d" % [u.x, u.y]] = true
-
-	if blockers.is_empty():
-		return true
-
-	# Supercover line walk: enumerate every cell the line from center of
-	# (from_x, from_y) to center of (to_x, to_y) touches or crosses.
-	var dx: int = to_x - from_x
-	var dy: int = to_y - from_y
-	var sx: int = 1 if dx > 0 else (-1 if dx < 0 else 0)
-	var sy: int = 1 if dy > 0 else (-1 if dy < 0 else 0)
-	var adx: int = abs(dx)
-	var ady: int = abs(dy)
-
-	var cx: int = from_x
-	var cy: int = from_y
-
-	# Use a modified Bresenham for supercover (checks diagonal-adjacent cells).
-	# error tracks which axis to step. When error triggers both, step diag and
-	# also check the two axis-only neighbors for coverage.
-	var error: int = adx - ady
-
-	var steps: int = adx + ady
-	for _i in range(steps):
-		var e2: int = 2 * error
-		if e2 > -ady and e2 < adx:
-			# Diagonal step — supercover: check both axis-adjacent cells too
-			if blockers.has("%d,%d" % [cx + sx, cy]):
-				return false
-			if blockers.has("%d,%d" % [cx, cy + sy]):
-				return false
-			cx += sx
-			cy += sy
-			error += -ady + adx
-		elif e2 > -ady:
-			cx += sx
-			error -= ady
-		else:
-			cy += sy
-			error += adx
-
-		# Skip endpoint
-		if cx == to_x and cy == to_y:
-			break
-		if blockers.has("%d,%d" % [cx, cy]):
-			return false
-
-	return true
-
-
-## Find all valid shooting targets for a unit: alive enemies in weapon range
-## with line of sight.
-static func _find_shooting_targets(state: Types.GameState, shooter: Types.UnitState) -> Array:
-	var targets: Array = []
-	var wr: int = shooter.base_stats.weapon_range
-	if wr <= 0:
-		return targets
-	for u in state.units:
-		if u.is_dead or u.owner_seat == shooter.owner_seat:
-			continue
-		if u.x < 0 or u.y < 0:
-			continue
-		var d := _grid_distance(shooter.x, shooter.y, u.x, u.y)
-		if d <= wr and _has_line_of_sight(state, shooter.x, shooter.y, u.x, u.y):
-			targets.append(u)
-	return targets
-
-
-## Find shooting targets from an arbitrary position (for move_and_shoot post-move).
-static func _find_shooting_targets_from(state: Types.GameState, shooter: Types.UnitState, from_x: int, from_y: int) -> Array:
-	var targets: Array = []
-	var wr: int = shooter.base_stats.weapon_range
-	if wr <= 0:
-		return targets
-	for u in state.units:
-		if u.is_dead or u.owner_seat == shooter.owner_seat:
-			continue
-		if u.x < 0 or u.y < 0:
-			continue
-		var d := _grid_distance(from_x, from_y, u.x, u.y)
-		if d <= wr and _has_line_of_sight(state, from_x, from_y, u.x, u.y):
-			targets.append(u)
-	return targets
-
-
-## Validate whether a specific target is legal for shooting.
-## Returns empty string if valid, error string if not.
-## Enforces closest-target rule (v17 p.12): must target the closest valid
-## enemy in range + LoS (ties are permissive — any tied target is legal).
-## Sharpshooters bypass the closest-target restriction but still need LoS.
-static func _is_valid_shooting_target(state: Types.GameState, shooter: Types.UnitState, target: Types.UnitState) -> String:
-	if target.is_dead:
-		return "Target is dead"
-	if target.owner_seat == shooter.owner_seat:
-		return "Cannot target your own units"
-
-	var distance := _grid_distance(shooter.x, shooter.y, target.x, target.y)
-	if distance > shooter.base_stats.weapon_range:
-		return "Target out of range (max %d)" % shooter.base_stats.weapon_range
-
-	if not _has_line_of_sight(state, shooter.x, shooter.y, target.x, target.y):
-		return "No line of sight to target"
-
-	# Closest-target enforcement (skip for Sharpshooters)
-	if "sharpshooters" not in shooter.special_rules:
-		var valid_targets := _find_shooting_targets(state, shooter)
-		if valid_targets.is_empty():
-			return "No valid targets in range with LoS"
-		# Find the minimum distance among valid targets
-		var min_dist: float = 99999.0
-		for vt in valid_targets:
-			var vd := _grid_distance(shooter.x, shooter.y, vt.x, vt.y)
-			if vd < min_dist:
-				min_dist = vd
-		# Target must be among the closest (ties allowed)
-		if distance > min_dist + 0.01:  # small epsilon for float comparison
-			return "Must target closest enemy (closest is at %.1f, target is at %.1f)" % [min_dist, distance]
-
-	return ""
-
-
-## Same as _is_valid_shooting_target but checks LoS from an arbitrary position
-## (for move_and_shoot post-move validation).
-static func _is_valid_shooting_target_from(state: Types.GameState, shooter: Types.UnitState, target: Types.UnitState, from_x: int, from_y: int) -> String:
-	if target.is_dead:
-		return "Target is dead"
-	if target.owner_seat == shooter.owner_seat:
-		return "Cannot target your own units"
-
-	var distance := _grid_distance(from_x, from_y, target.x, target.y)
-	if distance > shooter.base_stats.weapon_range:
-		return "Target out of range (max %d)" % shooter.base_stats.weapon_range
-
-	if not _has_line_of_sight(state, from_x, from_y, target.x, target.y):
-		return "No line of sight to target"
-
-	# Closest-target enforcement (skip for Sharpshooters)
-	if "sharpshooters" not in shooter.special_rules:
-		var valid_targets := _find_shooting_targets_from(state, shooter, from_x, from_y)
-		if valid_targets.is_empty():
-			return "No valid targets in range with LoS"
-		var min_dist: float = 99999.0
-		for vt in valid_targets:
-			var vd := _grid_distance(from_x, from_y, vt.x, vt.y)
-			if vd < min_dist:
-				min_dist = vd
-		if distance > min_dist + 0.01:
-			return "Must target closest enemy (closest is at %.1f, target is at %.1f)" % [min_dist, distance]
-
-	return ""
-
-
-# =============================================================================
 # HELPER FUNCTIONS
 # =============================================================================
-
-## Apply wounds to a unit, removing models as they die.
-static func _apply_wounds(unit: Types.UnitState, wounds: int) -> void:
-	var remaining_wounds = wounds
-	while remaining_wounds > 0 and not unit.is_dead:
-		unit.current_wounds += 1
-		remaining_wounds -= 1
-		if unit.current_wounds >= unit.base_stats.wounds:
-			unit.model_count -= 1
-			unit.current_wounds = 0
-			if unit.model_count <= 0:
-				unit.is_dead = true
-				unit.model_count = 0
-
 
 ## Deep clone a GameState.
 static func _clone_state(state: Types.GameState) -> Types.GameState:
 	return Types.GameState.from_dict(state.to_dict())
 
 
-## Find a unit by ID in a GameState (read-only).
+## Find a unit by ID in a GameState. Caller decides whether the returned
+## reference is treated as read-only or as the mutable handle into a cloned state.
 static func _find_unit(state: Types.GameState, unit_id: String) -> Types.UnitState:
-	for u in state.units:
-		if u.id == unit_id:
-			return u
-	return null
-
-
-## Find a unit by ID in a mutable state (for modification after clone).
-static func _find_unit_in(state: Types.GameState, unit_id: String) -> Types.UnitState:
 	for u in state.units:
 		if u.id == unit_id:
 			return u
@@ -1796,7 +1016,7 @@ static func _has_unordered_snobs(state: Types.GameState, seat: int) -> bool:
 
 ## Does at least one alive enemy unit sit inside the shooter's weapon range?
 static func _has_valid_volley_target(state: Types.GameState, unit: Types.UnitState) -> bool:
-	return not _find_shooting_targets(state, unit).is_empty()
+	return not Targeting.find_shooting_targets(state, unit).is_empty()
 
 
 ## Does at least one alive enemy unit sit inside the charger's M + move_bonus range with LoS?
@@ -1807,8 +1027,8 @@ static func _has_valid_charge_target(state: Types.GameState, unit: Types.UnitSta
 	for u in state.units:
 		if u.is_dead or u.owner_seat == unit.owner_seat:
 			continue
-		var d := _grid_distance(unit.x, unit.y, u.x, u.y)
-		if d <= reach and _has_line_of_sight(state, unit.x, unit.y, u.x, u.y):
+		var d := Board.grid_distance(unit.x, unit.y, u.x, u.y)
+		if d <= reach and Targeting.has_line_of_sight(state, unit.x, unit.y, u.x, u.y):
 			return true
 	return false
 
@@ -1832,101 +1052,10 @@ static func get_followers_in_command_range(state: Types.GameState, snob_id: Stri
 
 	for unit in state.units:
 		if unit.owner_seat == snob.owner_seat and not unit.is_snob() and not unit.is_dead and not unit.has_ordered:
-			var distance = _grid_distance(snob.x, snob.y, unit.x, unit.y)
+			var distance = Board.grid_distance(snob.x, snob.y, unit.x, unit.y)
 			if distance <= cmd_range:
 				result.append(unit.id)
 
 	return result
 
 
-## Validate basic movement constraints (bounds, not occupied).
-static func _validate_move(state: Types.GameState, unit: Types.UnitState, x: int, y: int) -> String:
-	if x < 0 or x >= BOARD_WIDTH or y < 0 or y >= BOARD_HEIGHT:
-		return "Coordinates out of bounds"
-	for u in state.units:
-		if not u.is_dead and u.x == x and u.y == y and u.id != unit.id:
-			return "Position occupied"
-	# v17 core p.22: "A unit may move across objectives, but may never finish
-	# a move on top of one."
-	if _is_objective_at(state, x, y):
-		return "Cannot end move on an objective marker"
-	return ""
-
-
-## Is there an objective marker at this cell?
-static func _is_objective_at(state: Types.GameState, x: int, y: int) -> bool:
-	for obj in state.objectives:
-		if obj.x == x and obj.y == y:
-			return true
-	return false
-
-
-## Recompute capture state for every objective per v17 core p.22.
-## Called after any state change that could shift Follower positions
-## (placement finalized, moves, charges, unit deaths). Mutates in place.
-##
-## Rules modeled:
-##   - Only Follower units capture (Snobs never do).
-##   - "Within 1"" maps to Euclidean distance ≤ 1.0 (orthogonal neighbor).
-##     Diagonal neighbors (√2 ≈ 1.41) are outside 1" and do not capture.
-##   - Objective cell itself is uncapturable-from; units can't end there.
-##   - If only one seat has adjacent Followers → captured by that seat.
-##   - If both seats have adjacent Followers → contested (uncaptured).
-##   - If neither seat has adjacent Followers → retain previous control.
-##
-## MVP simplification: the v17 "only one objective captured per move"
-## player-choice rule is not enforced here — a move that ends adjacent to
-## two uncontrolled objectives will capture both. Tracked for a follow-up
-## when objective placement is dense enough to matter in practice.
-static func _resolve_objective_captures(state: Types.GameState) -> void:
-	for obj in state.objectives:
-		var seat1_adjacent := 0
-		var seat2_adjacent := 0
-		for u in state.units:
-			if u.is_dead or u.is_snob():
-				continue
-			if u.x < 0 or u.y < 0:
-				continue
-			var d := _grid_distance(u.x, u.y, obj.x, obj.y)
-			if d <= 1.0:
-				if u.owner_seat == 1:
-					seat1_adjacent += 1
-				else:
-					seat2_adjacent += 1
-		if seat1_adjacent > 0 and seat2_adjacent > 0:
-			obj.captured_by = 0
-		elif seat1_adjacent > 0:
-			obj.captured_by = 1
-		elif seat2_adjacent > 0:
-			obj.captured_by = 2
-		# else: retain obj.captured_by (captured objective stays captured
-		# until enemy contests or claims it).
-
-
-## Find the best adjacent cell to a target for a charging unit.
-static func _find_adjacent_cell(state: Types.GameState, charger: Types.UnitState, target: Types.UnitState) -> Vector2i:
-	var best = Vector2i(-1, -1)
-	var best_dist = 9999
-
-	for offset in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
-		var cx = target.x + offset.x
-		var cy = target.y + offset.y
-		if cx < 0 or cx >= BOARD_WIDTH or cy < 0 or cy >= BOARD_HEIGHT:
-			continue
-		# Check not occupied (except by charger itself)
-		var occupied = false
-		for u in state.units:
-			if not u.is_dead and u.x == cx and u.y == cy and u.id != charger.id:
-				occupied = true
-				break
-		if occupied:
-			continue
-		# Objective cells are invalid end-of-move destinations (v17 p.22).
-		if _is_objective_at(state, cx, cy):
-			continue
-		var dist = _grid_distance(charger.x, charger.y, cx, cy)
-		if dist < best_dist:
-			best_dist = dist
-			best = Vector2i(cx, cy)
-
-	return best
