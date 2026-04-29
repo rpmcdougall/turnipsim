@@ -3,6 +3,7 @@ extends SceneTree
 ##
 ## Run with: godot --headless -s tests/test_game_engine.gd
 
+const Board = preload("res://game/board.gd")
 const Targeting = preload("res://game/targeting.gd")
 const Combat = preload("res://game/combat.gd")
 const Panic = preload("res://game/panic.gd")
@@ -34,6 +35,7 @@ func _init() -> void:
 	_test_victory_conditions()
 	_test_objectives()
 	_test_targeting()
+	_test_one_inch_rule()
 
 	print("")
 	print("============================================================")
@@ -1729,19 +1731,37 @@ func _test_targeting() -> void:
 	print("")
 	print("[Test Suite: Targeting]")
 
-	_test("find_adjacent_cell: cardinals blocked → diagonal contact accepted", func():
-		# Charger at (8,8), target at (10,10). All four cardinal cells around
-		# the target are occupied by friendlies; diagonals are open. Pre-fix
-		# this returned (-1,-1) and rejected the charge as "no open cell".
+	_test("find_adjacent_cell: shorter diagonal beats longer cardinal", func():
+		# Charger at (8,8), target at (10,10), no blockers. Diagonal (9,9)
+		# is √2 ≈ 1.41 from charger; closest cardinal cells (9,10) and
+		# (10,9) are 2.24 away. Pre-#77 the function only checked cardinals
+		# and returned the longer route. With the 8-neighbor ring the
+		# diagonal wins.
 		var state = _mock_orders_state()
 		var charger = state.units[0]
 		var target = state.units[1]
 		charger.x = 8; charger.y = 8
 		target.x = 10; target.y = 10
-		# Block all 4 cardinals around the target with the two Followers
-		# plus two extra blockers we add to state.units.
+		# Move other units out of 1"-rule range of any candidate cell.
+		state.units[2].x = 0; state.units[2].y = 0
+		state.units[3].x = 0; state.units[3].y = 31
+
+		var cell = Targeting.find_adjacent_cell(state, charger, target)
+		return cell.x == 9 and cell.y == 9
+	)
+
+	_test("find_adjacent_cell: corner trap → 1\" rule rejects all diagonals", func():
+		# Cardinals around target blocked, only diagonals open. Each diagonal
+		# is exactly 1.0 from one of the cardinal blockers, so the charge
+		# end-position 1" rule (v17 p.17) rejects every diagonal — find
+		# returns the sentinel and the charge will fail at the call site.
+		var state = _mock_orders_state()
+		var charger = state.units[0]
+		var target = state.units[1]
+		charger.x = 8; charger.y = 8
+		target.x = 10; target.y = 10
 		state.units[2].x = 9; state.units[2].y = 10   # seat 1 Follower
-		state.units[3].x = 11; state.units[3].y = 10  # seat 2 Follower
+		state.units[3].x = 11; state.units[3].y = 10  # seat 2 Follower (enemy)
 		var blocker_a = _mock_unit("blk_a", 1, "Fodder", "infantry", 6, 1, 6, 1, 6, 0, 1)
 		blocker_a.x = 10; blocker_a.y = 9
 		var blocker_b = _mock_unit("blk_b", 1, "Fodder", "infantry", 6, 1, 6, 1, 6, 0, 1)
@@ -1750,8 +1770,7 @@ func _test_targeting() -> void:
 		state.units.append(blocker_b)
 
 		var cell = Targeting.find_adjacent_cell(state, charger, target)
-		# Closest diagonal to charger at (8,8) is (9,9) — distance √2 ≈ 1.41.
-		return cell.x == 9 and cell.y == 9
+		return cell.x == -1 and cell.y == -1
 	)
 
 	_test("find_adjacent_cell: cardinal preferred when both available", func():
@@ -1788,6 +1807,135 @@ func _test_targeting() -> void:
 
 		var cell = Targeting.find_adjacent_cell(state, charger, target)
 		return cell.x == -1 and cell.y == -1
+	)
+
+
+func _test_one_inch_rule() -> void:
+	print("")
+	print("[Test Suite: 1\" Rule]")
+
+	# --- Board.validate_move (standard p.9 mode) ---
+
+	_test("1\": Follower cannot end march within 1\" of friendly Follower", func():
+		var state = _mock_orders_state()
+		var follower = state.units[2]  # seat 1 Fodder at (12, 30)
+		var friendly_follower = _mock_unit("ff", 1, "Fodder", "infantry", 6, 1, 6, 1, 6, 0, 12)
+		friendly_follower.x = 15; friendly_follower.y = 15
+		state.units.append(friendly_follower)
+
+		# (15, 14) is cardinal-adjacent to (15, 15) — distance 1.0, illegal.
+		return Board.validate_move(state, follower, 15, 14).contains("friendly Follower")
+	)
+
+	_test("1\": Snob CAN end move within 1\" of friendly Follower", func():
+		var state = _mock_orders_state()
+		var snob = state.units[0]  # seat 1 Toff (snob)
+		var friendly_follower = _mock_unit("ff", 1, "Fodder", "infantry", 6, 1, 6, 1, 6, 0, 12)
+		friendly_follower.x = 15; friendly_follower.y = 15
+		state.units.append(friendly_follower)
+
+		return Board.validate_move(state, snob, 15, 14) == ""
+	)
+
+	_test("1\": Follower CAN end move within 1\" of friendly Snob", func():
+		var state = _mock_orders_state()
+		var follower = state.units[2]
+		var friendly_snob = _mock_unit("fs", 1, "Toff", "snob", 6, 2, 5, 2, 5, 6, 1)
+		friendly_snob.x = 15; friendly_snob.y = 15
+		state.units.append(friendly_snob)
+
+		return Board.validate_move(state, follower, 15, 14) == ""
+	)
+
+	_test("1\": no unit may end within 1\" of an enemy", func():
+		var state = _mock_orders_state()
+		var snob = state.units[0]
+		var enemy = state.units[1]  # seat 2 Snob
+		enemy.x = 15; enemy.y = 15
+
+		# Snob mover, enemy near-unit — Snob exemption does NOT apply to enemies.
+		return Board.validate_move(state, snob, 15, 14).contains("enemy")
+	)
+
+	_test("1\": diagonal-adjacent (1.41) is legal", func():
+		var state = _mock_orders_state()
+		var follower = state.units[2]
+		var enemy = state.units[1]
+		enemy.x = 15; enemy.y = 15
+		# Move other state units out of any 1" range
+		state.units[0].x = 0; state.units[0].y = 0
+		state.units[3].x = 47; state.units[3].y = 31
+
+		# (14, 14) is diagonal to (15, 15) — distance √2 ≈ 1.41, legal.
+		return Board.validate_move(state, follower, 14, 14) == ""
+	)
+
+	# --- Integration via execute_order march ---
+
+	_test("1\": march into 1\" of enemy is rejected at order execution", func():
+		var state = _mock_orders_state()
+		state.units[0].x = 10; state.units[0].y = 15
+		state.units[1].x = 15; state.units[1].y = 15
+		state = GameEngine.select_snob(state, state.units[0].id).new_state
+		state = GameEngine.declare_order(state, state.units[0].id, "march", 3, [3, 3]).new_state
+
+		# (15, 14) is cardinal-adjacent to enemy at (15, 15).
+		var result = GameEngine.execute_order(state, {"x": 15, "y": 14}, [])
+		return not result.is_success() and "1\"" in result.error
+	)
+
+	# --- Targeting.find_adjacent_cell (charge p.17 strict mode) ---
+
+	_test("1\" charge: non-target friendly within 1\" blocks the cell", func():
+		# Charger at (10, 10), target at (12, 10). Cardinal cells around
+		# target: (11, 10) is dist 1 from charger, dist 1 from a friendly
+		# blocker we put at (11, 9). All 4 cardinals + diagonals checked,
+		# the legal cells should exclude any cell within 1" of the friendly.
+		var state = _mock_orders_state()
+		state.units[0].x = 10; state.units[0].y = 10
+		state.units[1].x = 12; state.units[1].y = 10
+		# Move u2/u3 out of the way
+		state.units[2].x = 0; state.units[2].y = 0
+		state.units[3].x = 47; state.units[3].y = 31
+		var friendly_blocker = _mock_unit("fb", 1, "Fodder", "infantry", 6, 1, 6, 1, 6, 0, 1)
+		friendly_blocker.x = 11; friendly_blocker.y = 9
+		state.units.append(friendly_blocker)
+
+		# Cells around target (12,10): (11,10) is dist 1 from blocker — blocked.
+		# (13,10) is dist √(4+1)=2.24 — OK. (12,9) is dist √(1+0)=1 — blocked.
+		# (12,11) is dist √(1+4)=2.24 — OK. Picking the closest to charger
+		# at (10,10): (11,10) blocked, so try diagonals (11,9) is occupied,
+		# (11,11) is dist √(0+4)=2.0 from blocker, dist √2 from charger — OK.
+		var cell = Targeting.find_adjacent_cell(state, state.units[0], state.units[1])
+		# Whatever cell is chosen, it must be > 1.0 from the friendly blocker.
+		var dist_to_blocker = Board.grid_distance(cell.x, cell.y, 11, 9)
+		return cell.x != -1 and dist_to_blocker > 1.0
+	)
+
+	# --- Panic._is_valid_retreat_dest (retreat p.9 mode) ---
+
+	_test("1\" retreat: end within 1\" of friendly Snob is rejected", func():
+		# Retreat is stricter than the standard rule — even friendly Snobs
+		# count for the 1" check ("any other unit").
+		var state = _mock_orders_state()
+		var retreater = state.units[2]  # Fodder seat 1 at (12, 30)
+		retreater.x = 20; retreater.y = 20
+		retreater.panic_tokens = 1
+		state.units[1].x = 25; state.units[1].y = 20  # nearest enemy seat 2 Snob
+		# Place a friendly Snob 1" away from the would-be retreat cell.
+		state.units[0].x = 14; state.units[0].y = 20
+
+		# Retreat dist: 2" × 1 token + 3 (D6=3) = 5". Direction away from
+		# enemy (25, 20) → toward -x. Ideal cell: (15, 20) — exactly 1.0
+		# from the friendly Snob at (14, 20). The retreat dest helper
+		# should reject (15, 20) and spiral outward.
+		var result = Panic.execute_retreat(state, retreater.id, 3)
+		var to_x = result.get("to_x", -1)
+		var to_y = result.get("to_y", -1)
+		# Wherever the retreater ended up, it must be > 1.0 from the
+		# friendly Snob at (14, 20).
+		var d_to_snob = Board.grid_distance(to_x, to_y, 14, 20)
+		return result["retreated"] and d_to_snob > 1.0
 	)
 
 

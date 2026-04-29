@@ -148,6 +148,12 @@ static func is_valid_shooting_target_from(state: Types.GameState, shooter: Types
 ## Iterates all 8 neighbors (4 cardinal + 4 diagonal). v17 base contact is
 ## "touching base", which on the integer grid means any of the 8 ring cells
 ## around the target. Tie-break: cell closest to the charger.
+##
+## Also enforces the v17 p.17 charge-end-position rule: the cell must be
+## >1" from every unit except the target itself ("a charging unit may
+## never finish its move within 1" of another unit except the target of
+## its charge"). This is stricter than the standard p.9 1" rule — even
+## friendly Snobs near the destination block the cell.
 static func find_adjacent_cell(state: Types.GameState, charger: Types.UnitState, target: Types.UnitState) -> Vector2i:
 	var best = Vector2i(-1, -1)
 	var best_dist = 9999.0
@@ -175,6 +181,19 @@ static func find_adjacent_cell(state: Types.GameState, charger: Types.UnitState,
 				on_objective = true
 				break
 		if on_objective:
+			continue
+		# 1" rule for charges (v17 p.17): destination must be >1" from any
+		# unit except the target. No Snob exemption — strictest mode.
+		var one_inch_blocked = false
+		for u in state.units:
+			if u.is_dead or u.id == charger.id or u.id == target.id:
+				continue
+			if u.x < 0 or u.y < 0:
+				continue
+			if Board.grid_distance(cx, cy, u.x, u.y) <= 1.0:
+				one_inch_blocked = true
+				break
+		if one_inch_blocked:
 			continue
 		var dist = Board.grid_distance(charger.x, charger.y, cx, cy)
 		if dist < best_dist:

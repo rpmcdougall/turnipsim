@@ -207,7 +207,11 @@ static func _find_retreat_cell(state: Types.GameState, unit: Types.UnitState, ta
 
 
 ## Is this cell a valid retreat destination? Bounds, not occupied by another
-## live unit, not on an objective marker (v17 p.22).
+## live unit, not on an objective marker (v17 p.22), and ≥1" away from any
+## other unit (v17 p.9 retreat clause: "Retreating models in a unit are
+## able to move within 1" and through any unit, so long as they end their
+## move at least 1" away from any other unit"). No Snob exemption applies
+## to retreat — the rule says "any other unit", friendly or enemy.
 static func _is_valid_retreat_dest(state: Types.GameState, unit: Types.UnitState, x: int, y: int) -> bool:
 	if not Board.is_in_bounds(x, y):
 		return false
@@ -216,6 +220,14 @@ static func _is_valid_retreat_dest(state: Types.GameState, unit: Types.UnitState
 			return false
 	for obj in state.objectives:
 		if obj.x == x and obj.y == y:
+			return false
+	# 1" rule for retreat (v17 p.9): end ≥1" from any other unit.
+	for u in state.units:
+		if u.is_dead or u.id == unit.id:
+			continue
+		if u.x < 0 or u.y < 0:
+			continue
+		if Board.grid_distance(x, y, u.x, u.y) <= 1.0:
 			return false
 	return true
 
