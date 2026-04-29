@@ -145,14 +145,17 @@ static func is_valid_shooting_target_from(state: Types.GameState, shooter: Types
 
 ## Find the best adjacent cell to a target for a charging unit.
 ##
-## Currently checks only 4-cardinal neighbors (N/S/E/W). Diagonal-adjacent
-## charge contact (within √2) is rejected — tracked separately as a bug
-## (#77) and lives here so the fix only touches one file.
+## Iterates all 8 neighbors (4 cardinal + 4 diagonal). v17 base contact is
+## "touching base", which on the integer grid means any of the 8 ring cells
+## around the target. Tie-break: cell closest to the charger.
 static func find_adjacent_cell(state: Types.GameState, charger: Types.UnitState, target: Types.UnitState) -> Vector2i:
 	var best = Vector2i(-1, -1)
-	var best_dist = 9999
+	var best_dist = 9999.0
 
-	for offset in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+	for offset in [
+		Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1),
+		Vector2i(1, 1), Vector2i(1, -1), Vector2i(-1, 1), Vector2i(-1, -1),
+	]:
 		var cx = target.x + offset.x
 		var cy = target.y + offset.y
 		if not Board.is_in_bounds(cx, cy):
