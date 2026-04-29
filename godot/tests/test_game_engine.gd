@@ -33,6 +33,7 @@ func _init() -> void:
 	_test_advance_flow()
 	_test_victory_conditions()
 	_test_objectives()
+	_test_targeting()
 
 	print("")
 	print("============================================================")
@@ -1585,6 +1586,72 @@ func _test_objectives() -> void:
 		state = GameEngine.declare_order(state, follower.id, "march", 4, [3, 3]).new_state
 		var res = GameEngine.execute_order(state, {"x": 20, "y": 15}, [])
 		return not res.is_success() and "objective" in res.error
+	)
+
+
+func _test_targeting() -> void:
+	print("")
+	print("[Test Suite: Targeting]")
+
+	_test("find_adjacent_cell: cardinals blocked → diagonal contact accepted", func():
+		# Charger at (8,8), target at (10,10). All four cardinal cells around
+		# the target are occupied by friendlies; diagonals are open. Pre-fix
+		# this returned (-1,-1) and rejected the charge as "no open cell".
+		var state = _mock_orders_state()
+		var charger = state.units[0]
+		var target = state.units[1]
+		charger.x = 8; charger.y = 8
+		target.x = 10; target.y = 10
+		# Block all 4 cardinals around the target with the two Followers
+		# plus two extra blockers we add to state.units.
+		state.units[2].x = 9; state.units[2].y = 10   # seat 1 Follower
+		state.units[3].x = 11; state.units[3].y = 10  # seat 2 Follower
+		var blocker_a = _mock_unit("blk_a", 1, "Fodder", "infantry", 6, 1, 6, 1, 6, 0, 1)
+		blocker_a.x = 10; blocker_a.y = 9
+		var blocker_b = _mock_unit("blk_b", 1, "Fodder", "infantry", 6, 1, 6, 1, 6, 0, 1)
+		blocker_b.x = 10; blocker_b.y = 11
+		state.units.append(blocker_a)
+		state.units.append(blocker_b)
+
+		var cell = Targeting.find_adjacent_cell(state, charger, target)
+		# Closest diagonal to charger at (8,8) is (9,9) — distance √2 ≈ 1.41.
+		return cell.x == 9 and cell.y == 9
+	)
+
+	_test("find_adjacent_cell: cardinal preferred when both available", func():
+		# Charger directly west of target, no blockers. Cardinal (9,10) at
+		# distance 1.0 from charger should beat diagonals (9,9)/(9,11) at √2.
+		var state = _mock_orders_state()
+		var charger = state.units[0]
+		var target = state.units[1]
+		charger.x = 8; charger.y = 10
+		target.x = 10; target.y = 10
+		# Move other units far away so they don't accidentally block anything.
+		state.units[2].x = 0; state.units[2].y = 0
+		state.units[3].x = 0; state.units[3].y = 31
+
+		var cell = Targeting.find_adjacent_cell(state, charger, target)
+		return cell.x == 9 and cell.y == 10
+	)
+
+	_test("find_adjacent_cell: all 8 neighbors blocked → returns sentinel", func():
+		var state = _mock_orders_state()
+		var charger = state.units[0]
+		var target = state.units[1]
+		charger.x = 5; charger.y = 5
+		target.x = 10; target.y = 10
+		# Move existing extras out of the way, then block all 8 ring cells.
+		state.units[2].x = 0; state.units[2].y = 0
+		state.units[3].x = 0; state.units[3].y = 31
+		var ring = [[9,9],[9,10],[9,11],[10,9],[10,11],[11,9],[11,10],[11,11]]
+		for i in range(ring.size()):
+			var p = ring[i]
+			var blk = _mock_unit("blk_%d" % i, 1, "Fodder", "infantry", 6, 1, 6, 1, 6, 0, 1)
+			blk.x = p[0]; blk.y = p[1]
+			state.units.append(blk)
+
+		var cell = Targeting.find_adjacent_cell(state, charger, target)
+		return cell.x == -1 and cell.y == -1
 	)
 
 
