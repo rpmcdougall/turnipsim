@@ -71,8 +71,8 @@ Each round, players alternate picking Snobs to "Make Ready." The sidebar is phas
 **order_execute** — run the order
 - Sidebar shows the declared order, blundered state, and movement range with dice bonus applied.
 - **Volley Fire:** click an enemy unit to fire (`-1 Inaccuracy` unless blundered). Shooting resolves as a simultaneous engagement (v17 p.13): the target returns fire if it has a ranged weapon, no powder smoke, and the shooter is in range. Casualties from the primary shot do not suppress return fire. Winner (more unsaved wounds) forces the loser to retreat `D6 + 2" × panic tokens`; ties produce no retreat.
-- **March:** click a destination cell within `M + move_bonus`.
-- **Charge:** click an enemy within `M + move_bonus`; attacker auto-pathfinds to an adjacent cell and resolves melee as bouts (v17 p.18) — attacker strikes, defender removes casualties, defender counter-strikes, winner = more unsaved wounds per bout. Tied bouts repeat up to 3×; cap-hit ties draw with no retreat. Post-melee both survivors gain +1 panic; the loser retreats (which can include the charger).
+- **March:** click a destination cell within `M + move_bonus`. The destination must be ≥1" from any enemy and (if the marcher is a Follower) ≥1" from any friendly Follower (v17 p.9, "the 1" rule"). Snobs are exempt for friendlies but not for enemies. Diagonal-adjacent cells (√2 ≈ 1.41") are legal; cardinal-adjacent (1.0") is rejected.
+- **Charge:** click an enemy within `M + move_bonus`; attacker auto-pathfinds to an adjacent cell and resolves the charge sequence — target panic test (v17 p.16 step 2), Stand and Shoot if the target passed and is eligible (ranged weapon, no powder smoke, not close-combat-equipped — v17 p.16 step 3), then melee as bouts (v17 p.18). Attacker strikes, defender removes casualties, defender counter-strikes, winner = more unsaved wounds per bout. Tied bouts repeat up to 3×; cap-hit ties draw with no retreat. Post-melee both survivors gain +1 panic; the loser retreats (which can include the charger). Charge end-cell must be >1" from any non-target unit (v17 p.17, stricter than the standard rule — even friendly Snobs near the contact cell block it).
 - **Move & Shoot:** click a destination (max `M`, or `1D6` if blundered), then click an enemy to fire from the new position *or* press **Confirm move (no shot)** to skip the shot. The engagement rule is the same as Volley Fire — return-fire range is measured from the shooter's post-move position.
 
 On success the turn either passes to the opposing seat (if they still have unordered Snobs), or — once both sides' Snobs are done — transitions to `follower_self_order`.
@@ -130,6 +130,9 @@ The fastest way to force each path without an hour-long game:
 | Melee bouts | Target passes panic → bout loop runs: attacker strikes, defender removes dead, defender counter-strikes (if alive), attacker removes dead. Winner = more unsaved wounds that bout; tied bouts repeat up to 3 before draw. Both survivors +1 panic after the melee; loser retreats (charger can end up retreating instead of holding the cell). | Only one side rolls, no counter-attack, melee always ends after one pass, charger always holds the cell regardless of outcome |
 | Shooting engagement | Volley Fire / Move & Shoot resolves both sides simultaneously when target is eligible to return fire (has ranged weapon, no powder smoke, shooter in range — measured from post-move position for Move & Shoot). Casualties don't suppress return fire. Winner's loser retreats `D6 + 2"×tokens`; tie = no retreat. Each side gains +1 panic token per side that took hits. | Only shooter rolls, return fire ignored after heavy casualties, smoked unit still returns fire, tied engagement still retreats someone |
 | Move & Shoot two-click | Destination staged → Confirm button appears | Confirm never appears, or first click executes immediately |
+| 1" rule on march/move&shoot | Cardinal-adjacent (distance 1.0) cells next to enemies are rejected with `Cannot end move within 1" of enemy unit`. Snobs can end within 1" of friendly Followers; Followers cannot. Diagonal-adjacent (1.41") is legal. | Server accepts cardinal-adjacent landing, or rejects diagonal-adjacent |
+| 1" rule on charge | Charge end-cell must be >1" from any non-target unit. If the only legal cells next to the target are within 1" of a third unit, charge fails with `No open cell adjacent to target`. | Charge succeeds with end-cell within 1" of a non-target friendly or enemy |
+| Stand and Shoot | If the target passes its panic test and has a ranged weapon, no powder smoke, and isn't close-combat-equipped, it fires at the charger before melee. Charger takes wounds (and gains a panic token if any hit landed) before bouts begin. If the charger is wiped out by S&S, the charge ends with no melee and no movement; defender holds. Range and LoS are not required for S&S. | S&S never fires on a viable charge target, or fires after melee, or charger reaches melee at full strength after a hit-landing S&S |
 | Round advance | `has_ordered` clears on all units, powder smoke gone | Units stay marked ordered across rounds |
 
 ---
@@ -158,6 +161,7 @@ These should all surface server-side errors in `test-logs/server.log` and in the
 - Declare order on Follower outside command range
 - Charge enemy out of `M + move_bonus` range
 - March to a cell farther than allowed
+- March or Move & Shoot to a cell within 1" of an enemy (server returns `Cannot end move within 1"...`)
 - Act on opponent's turn (server returns `Not your turn`)
 
 ---

@@ -31,10 +31,22 @@ static func is_in_bounds(x: int, y: int) -> bool:
 	return x >= 0 and x < BOARD_WIDTH and y >= 0 and y < BOARD_HEIGHT
 
 
-## Validate that `unit` may end its move on (x, y). Returns "" on success,
-## else a human-readable error string. Checks bounds, occupancy by other
-## live units, and the v17 rule that a unit may move across an objective
-## but not finish a move on top of one (v17 core p.22).
+## Validate that `unit` may end a non-charge move (march, move-and-shoot)
+## on (x, y). Returns "" on success, else a human-readable error string.
+## Checks:
+##   - in bounds (board edges)
+##   - cell not occupied by another live unit
+##   - cell not on an objective marker (v17 p.22)
+##   - 1" rule (v17 p.9):
+##       * a Follower may not end within 1" of another friendly Follower
+##       * any unit may not end within 1" of an enemy unit
+##       * Snobs are exempt as either mover or near-unit for friendly checks
+##         ("Snobs may be moved and end their moves within 1" of any
+##         Friendly unit"); enemy proximity always applies regardless
+##
+## Charge moves are handled in Targeting.find_adjacent_cell (v17 p.17 is
+## stricter — only the charge target gets the proximity exemption).
+## Retreat is handled in Panic._is_valid_retreat_dest (any-other-unit rule).
 static func validate_move(state: Types.GameState, unit: Types.UnitState, x: int, y: int) -> String:
 	if not is_in_bounds(x, y):
 		return "Coordinates out of bounds"
@@ -44,4 +56,22 @@ static func validate_move(state: Types.GameState, unit: Types.UnitState, x: int,
 	for obj in state.objectives:
 		if obj.x == x and obj.y == y:
 			return "Cannot end move on an objective marker"
+
+	# 1" rule (v17 p.9). Snobs exempt as either mover or as a friendly
+	# near-unit. Enemy proximity always counts.
+	var mover_is_snob: bool = unit.is_snob()
+	for u in state.units:
+		if u.is_dead or u.id == unit.id:
+			continue
+		if u.x < 0 or u.y < 0:
+			continue
+		if grid_distance(x, y, u.x, u.y) > 1.0:
+			continue
+		if u.owner_seat != unit.owner_seat:
+			return "Cannot end move within 1\" of enemy unit (%s)" % u.unit_type
+		# Friendly within 1": only blocks if both mover and near-unit are
+		# Followers (Snobs exempt either way).
+		if not mover_is_snob and not u.is_snob():
+			return "Cannot end move within 1\" of friendly Follower (%s)" % u.unit_type
+
 	return ""
