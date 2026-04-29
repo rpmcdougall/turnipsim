@@ -379,15 +379,20 @@ func _roll_execute_dice(state: Types.GameState, params: Dictionary) -> Array:
 				def_dice = s_target.model_count * 2
 			num_dice = att_dice + def_dice
 		"charge":
-			# Worst case: attacker + defender each strike every bout. Target
-			# may be unknown at roll time (fizzle path) — fall back to a
-			# symmetric pool sized to the attacker.
+			# Stand and Shoot dice (target shoots charger before melee, v17
+			# p.16) come first, then melee dice. Worst-case melee: attacker
+			# + defender each strike every bout. Target may be unknown at
+			# roll time (fizzle path) — fall back to symmetric pools, with
+			# the charger's own model_count standing in for S&S budget so
+			# we never under-roll.
 			var atk_per_bout = unit.model_count * unit.base_stats.attacks * 2
 			var def_per_bout = atk_per_bout
+			var ss_dice = unit.model_count * 2
 			var target = _find_unit(state, params.get("target_id", ""))
 			if target != null:
 				def_per_bout = target.model_count * target.base_stats.attacks * 2
-			num_dice = (atk_per_bout + def_per_bout) * Combat.MELEE_MAX_BOUTS
+				ss_dice = target.model_count * 2 if Combat.can_stand_and_shoot(target) else 0
+			num_dice = ss_dice + (atk_per_bout + def_per_bout) * Combat.MELEE_MAX_BOUTS
 		"march":
 			num_dice = 0
 

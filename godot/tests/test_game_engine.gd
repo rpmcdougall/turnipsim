@@ -563,6 +563,7 @@ func _test_execute_charge() -> void:
 		var state = _mock_orders_state()
 		state.units[0].x = 10; state.units[0].y = 10
 		state.units[1].x = 15; state.units[1].y = 10
+		state.units[1].has_powder_smoke = true  # skip Stand and Shoot (tested elsewhere)
 		state = GameEngine.select_snob(state, state.units[0].id).new_state
 		# Self-order, dice [3, 3]: bonus = 6. Toff M=6 → range 12. Distance to target = 5.
 		state = GameEngine.declare_order(state, state.units[0].id, "charge", 3, [3, 3]).new_state
@@ -596,6 +597,7 @@ func _test_execute_charge() -> void:
 		state.units[1].x = 11; state.units[1].y = 10
 		state.units[0].equipment = "close_combat"
 		state.units[0].base_stats.inaccuracy = 6  # Without CC would need 6+; with CC 5+.
+		state.units[1].has_powder_smoke = true  # skip Stand and Shoot
 		state = GameEngine.select_snob(state, state.units[0].id).new_state
 		state = GameEngine.declare_order(state, state.units[0].id, "charge", 3, [3, 3]).new_state
 
@@ -627,6 +629,136 @@ func _test_execute_charge() -> void:
 
 		var result = GameEngine.execute_order(state, {"fizzle": true}, [])
 		return not result.is_success() and "Cannot fizzle" in result.error
+	)
+
+	# --- Stand and Shoot reaction (v17 core p.16 step 3) ---
+
+	_test("S&S: eligibility — ranged + no smoke + not close-combat", func():
+		var t = _mock_unit("t", 2, "Toff", "snob", 6, 2, 5, 2, 5, 18, 1)
+		var ok_eligible = Combat.can_stand_and_shoot(t)
+
+		var smoked = _mock_unit("s", 2, "Toff", "snob", 6, 2, 5, 2, 5, 18, 1)
+		smoked.has_powder_smoke = true
+		var ok_smoked = not Combat.can_stand_and_shoot(smoked)
+
+		var no_range = _mock_unit("n", 2, "Toff", "snob", 6, 2, 5, 2, 5, 0, 1)
+		var ok_no_range = not Combat.can_stand_and_shoot(no_range)
+
+		var cc = _mock_unit("c", 2, "Toff", "snob", 6, 2, 5, 2, 5, 18, 1)
+		cc.equipment = "close_combat"
+		var ok_cc = not Combat.can_stand_and_shoot(cc)
+
+		var dead = _mock_unit("d", 2, "Toff", "snob", 6, 2, 5, 2, 5, 18, 1)
+		dead.is_dead = true
+		var ok_dead = not Combat.can_stand_and_shoot(dead)
+
+		return ok_eligible and ok_smoked and ok_no_range and ok_cc and ok_dead
+	)
+
+	_test("S&S: target fires before melee, charger takes wounds", func():
+		# Charger Toff (1 model, V=5, W=2) charges target Toff Snob (1 model,
+		# wr=18, I=5). S&S: 1×2=2 dice. [5,1] → 1 hit, 1 unsaved → charger
+		# takes 1 wound (current_wounds=1 of 2, still alive). Then melee:
+		# 4 dice for charger strike + 4 for counter = 8 dice. Charger
+		# [1,1,1,1] whiffs, target counters [5,5,1,1] → 2 unsaved → charger
+		# dies in counter-strike (current_wounds 1 + 2 = 3 ≥ W=2 → dead).
+		var state = _mock_orders_state()
+		state.units[0].x = 10; state.units[0].y = 10
+		state.units[1].x = 11; state.units[1].y = 10
+		state = GameEngine.select_snob(state, state.units[0].id).new_state
+		state = GameEngine.declare_order(state, state.units[0].id, "charge", 3, [3, 3]).new_state
+
+		var dice = [5, 1] + [1, 1, 1, 1] + [5, 5, 1, 1]
+		var params = {"target_id": state.units[1].id, "panic_die": 6, "fearless_die": 1}
+		var result = GameEngine.execute_order(state, params, dice)
+
+		var ss = result.new_state.action_log[-1].get("stand_and_shoot", {})
+		return (result.is_success()
+			and ss.get("hits", 0) == 1
+			and ss.get("wounds", 0) == 1
+			and result.new_state.units[1].has_powder_smoke  # target now smoked
+			and result.new_state.units[0].is_dead  # charger died in melee counter
+			and result.new_state.units[0].panic_tokens >= 1)  # +1 from S&S hit
+	)
+
+	_test("S&S: powder smoke on target blocks Stand and Shoot", func():
+		var state = _mock_orders_state()
+		state.units[0].x = 10; state.units[0].y = 10
+		state.units[1].x = 11; state.units[1].y = 10
+		state.units[1].has_powder_smoke = true
+		state = GameEngine.select_snob(state, state.units[0].id).new_state
+		state = GameEngine.declare_order(state, state.units[0].id, "charge", 3, [3, 3]).new_state
+
+		# No S&S dice consumed → melee dice start at offset 0.
+		var dice = [5, 5, 1, 1, 1, 1, 1, 1]
+		var params = {"target_id": state.units[1].id, "panic_die": 6, "fearless_die": 1}
+		var result = GameEngine.execute_order(state, params, dice)
+
+		var ss = result.new_state.action_log[-1].get("stand_and_shoot", {})
+		return (result.is_success()
+			and ss.is_empty()  # never resolved
+			and result.new_state.units[1].is_dead)  # melee killed target
+	)
+
+	_test("S&S: close-combat-equipped target cannot Stand and Shoot", func():
+		var state = _mock_orders_state()
+		state.units[0].x = 10; state.units[0].y = 10
+		state.units[1].x = 11; state.units[1].y = 10
+		state.units[1].equipment = "close_combat"
+		state = GameEngine.select_snob(state, state.units[0].id).new_state
+		state = GameEngine.declare_order(state, state.units[0].id, "charge", 3, [3, 3]).new_state
+
+		var dice = [5, 5, 1, 1, 1, 1, 1, 1]
+		var params = {"target_id": state.units[1].id, "panic_die": 6, "fearless_die": 1}
+		var result = GameEngine.execute_order(state, params, dice)
+
+		var ss = result.new_state.action_log[-1].get("stand_and_shoot", {})
+		return result.is_success() and ss.is_empty() and result.new_state.units[1].is_dead
+	)
+
+	_test("S&S: wipes out charger → charge ends, no melee, defender holds", func():
+		# Beef up target dice + give charger 1 wound so 1 wound from S&S
+		# kills it. S&S 1×2=2 dice [5,1] → 1 hit, 1 unsaved → charger dies.
+		# Melee dice provided but should NOT be consumed.
+		var state = _mock_orders_state()
+		state.units[0].x = 10; state.units[0].y = 10
+		state.units[0].base_stats.wounds = 1
+		state.units[1].x = 15; state.units[1].y = 10
+		state = GameEngine.select_snob(state, state.units[0].id).new_state
+		state = GameEngine.declare_order(state, state.units[0].id, "charge", 3, [3, 3]).new_state
+
+		var dice = [5, 1] + [5, 5, 5, 5, 5, 5, 5, 5]
+		var params = {"target_id": state.units[1].id, "panic_die": 6, "fearless_die": 1}
+		var result = GameEngine.execute_order(state, params, dice)
+
+		var log = result.new_state.action_log[-1]
+		return (result.is_success()
+			and result.new_state.units[0].is_dead  # charger destroyed by S&S
+			and not result.new_state.units[1].is_dead  # defender unscathed
+			and log.get("charger_destroyed_by_ss", false)
+			and log.get("stand_and_shoot", {}).get("charger_dead", false)
+			and not ("bouts" in log)  # melee never happened
+			and result.new_state.units[1].has_powder_smoke)
+	)
+
+	_test("S&S: failed panic test → target retreats, no Stand and Shoot", func():
+		# Per v17 p.16: S&S happens AFTER panic-pass (step 3 follows step 2
+		# success). Failed panic = retreat path, no S&S.
+		var state = _mock_orders_state()
+		state.units[0].x = 10; state.units[0].y = 10
+		state.units[1].x = 15; state.units[1].y = 10
+		state.units[1].panic_tokens = 6  # die=6 + 6 = 12 → fail
+		state = GameEngine.select_snob(state, state.units[0].id).new_state
+		state = GameEngine.declare_order(state, state.units[0].id, "charge", 3, [3, 3]).new_state
+
+		var params = {"target_id": state.units[1].id, "panic_die": 6, "fearless_die": 1, "retreat_die": 3}
+		var result = GameEngine.execute_order(state, params, [])
+
+		var log = result.new_state.action_log[-1]
+		return (result.is_success()
+			and log.get("target_fled", false)
+			and not ("stand_and_shoot" in log)  # never set on retreat path
+			and not result.new_state.units[1].has_powder_smoke)  # never fired
 	)
 
 
@@ -727,6 +859,7 @@ func _test_panic_test() -> void:
 		state.units[0].x = 10; state.units[0].y = 10
 		state.units[1].x = 15; state.units[1].y = 10
 		state.units[1].panic_tokens = 2  # die=3 → total=5 ≤ 6 → pass
+		state.units[1].has_powder_smoke = true  # skip Stand and Shoot
 		state = GameEngine.select_snob(state, state.units[0].id).new_state
 		state = GameEngine.declare_order(state, state.units[0].id, "charge", 3, [3, 3]).new_state
 
@@ -747,6 +880,7 @@ func _test_panic_test() -> void:
 		state.units[1] = Types.UnitState.new("u1", 2, "Brutes", "infantry", 6, 6, stats, "black_powder", rules)
 		state.units[1].x = 15; state.units[1].y = 10
 		state.units[1].panic_tokens = 4  # die=5 → total=9, Fearless die=3 → override
+		state.units[1].has_powder_smoke = true  # skip Stand and Shoot
 		state = GameEngine.select_snob(state, state.units[0].id).new_state
 		state = GameEngine.declare_order(state, state.units[0].id, "charge", 3, [3, 3]).new_state
 
@@ -956,6 +1090,7 @@ func _test_melee_bouts() -> void:
 		# Give defender multiple models so melee doesn't end via death.
 		# Replace u1 with 6-model Brutes-like unit (use Toff stats for simplicity).
 		state.units[1].model_count = 6
+		state.units[1].has_powder_smoke = true  # skip Stand and Shoot
 		state = GameEngine.select_snob(state, state.units[0].id).new_state
 		state = GameEngine.declare_order(state, state.units[0].id, "charge", 3, [1, 1]).new_state
 
@@ -983,6 +1118,7 @@ func _test_melee_bouts() -> void:
 		state.units[1].panic_tokens = 0
 		# Boost charger wounds so it survives the bout and can retreat.
 		state.units[0].base_stats.wounds = 5
+		state.units[1].has_powder_smoke = true  # skip Stand and Shoot
 		state = GameEngine.select_snob(state, state.units[0].id).new_state
 		state = GameEngine.declare_order(state, state.units[0].id, "charge", 3, [1, 1]).new_state
 

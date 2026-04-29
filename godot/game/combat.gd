@@ -76,6 +76,75 @@ static func resolve_shooting_side(attacker: Types.UnitState, target: Types.UnitS
 			"dice_used": needed_dice, "error": ""}
 
 
+## Is the target eligible to Stand and Shoot at the charger? v17 core p.16:
+## the target MUST Stand and Shoot if it has a ranged weapon and no powder
+## smoke. A unit equipped for close combat may never Stand and Shoot.
+## Range and line of sight are NOT required ("the unit waits until just
+## before impact before firing").
+static func can_stand_and_shoot(target: Types.UnitState) -> bool:
+	if target.is_dead:
+		return false
+	if target.base_stats.weapon_range <= 0:
+		return false
+	if target.has_powder_smoke:
+		return false
+	if target.equipment == "close_combat":
+		return false
+	return true
+
+
+## Resolve a Stand and Shoot reaction (v17 core p.16). One-sided: target
+## fires at charger; the charger CANNOT return fire (rules: "this is a
+## shooting attack, not a shooting engagement"). Wounds, panic token, and
+## powder smoke are applied per the standard shooting attack steps (p.14).
+##
+## Caller must check can_stand_and_shoot() first. Caller must NOT call this
+## if the target failed its panic test — the target retreated instead and
+## never reaches this step (v17 p.16 step 3).
+##
+## Returns {
+##   hits, saves, wounds,        # all from target shooting at charger
+##   charger_dead: bool,         # true if S&S wiped the charger
+##   smoke_applied: bool,        # target gained a powder smoke token
+##   dice_used: int,
+##   error: String,
+## }
+static func resolve_stand_and_shoot(target: Types.UnitState, charger: Types.UnitState, dice_results: Array, offset: int) -> Dictionary:
+	var result = {
+		"hits": 0, "saves": 0, "wounds": 0,
+		"charger_dead": false,
+		"smoke_applied": false,
+		"dice_used": 0,
+		"error": "",
+	}
+
+	var shot = resolve_shooting_side(target, charger, dice_results, offset, 0)
+	if shot["error"] != "":
+		result["error"] = shot["error"]
+		return result
+
+	result["hits"] = shot["hits"]
+	result["saves"] = shot["saves"]
+	result["wounds"] = shot["unsaved_wounds"]
+	result["dice_used"] = shot["dice_used"]
+
+	apply_wounds(charger, result["wounds"])
+	result["charger_dead"] = charger.is_dead
+
+	# Standard shooting attack rule (v17 p.14 step 5): any hit, saved or
+	# not, gives the target unit a panic token. Charger only — S&S is one-
+	# sided so the firing target gets no panic from this exchange.
+	if result["hits"] > 0 and not charger.is_dead:
+		charger.panic_tokens = mini(charger.panic_tokens + 1, 6)
+
+	# Black powder weapons gain a powder smoke token after firing (v17 p.14).
+	if target.equipment == "black_powder":
+		target.has_powder_smoke = true
+		result["smoke_applied"] = true
+
+	return result
+
+
 ## Is the target eligible to return fire at the shooter? v17 core p.13:
 ## target must have a ranged weapon, no powder smoke, and the shooter must
 ## be within the target's weapon range. Casualties from the primary strike
