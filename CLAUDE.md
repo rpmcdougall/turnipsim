@@ -18,6 +18,11 @@ godot/
 ├── game/               # Pure logic — NO node/scene dependencies
 │   ├── types.gd        # Stats (M/A/I/W/V), UnitDef, Roster, UnitState, GameState
 │   ├── ruleset.gd      # Loads + validates v17 JSON rulesets, validates rosters
+│   ├── board.gd        # Grid geometry, distance, move validation (1" rule)
+│   ├── targeting.gd    # LoS, valid-target enumeration, charge contact cells
+│   ├── combat.gd       # Shooting engagements, Stand & Shoot, melee bouts
+│   ├── panic.gd        # Panic test, retreat, Fearless, Stubborn Fanatics
+│   ├── objectives.gd   # Objective capture + victory conditions
 │   └── rulesets/       # One JSON file per ruleset (v17.json)
 ├── server/             # Server-only (server_main, game_engine, networking)
 ├── client/             # Client-only (main, scenes/menu, lobby, battle)
