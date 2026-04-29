@@ -812,12 +812,57 @@ static func _execute_charge(state: Types.GameState, unit: Types.UnitState, param
 		]
 		return result
 
+	# v17 core p.16 step 3: target Stands and Shoots if able. Only fires
+	# after the panic test passed (failed panic = retreat path above, no
+	# S&S). The charger CANNOT return fire — this is a one-sided shooting
+	# attack, not a shooting engagement. Range/LoS not required.
+	var stand_and_shoot: Dictionary = {}
+	var ss_dice_used: int = 0
+	if Combat.can_stand_and_shoot(new_target):
+		stand_and_shoot = Combat.resolve_stand_and_shoot(new_target, new_unit, dice_results, 0)
+		if stand_and_shoot["error"] != "":
+			result.error = stand_and_shoot["error"]
+			return result
+		ss_dice_used = stand_and_shoot["dice_used"]
+
+		if new_unit.is_dead:
+			# Charger wiped out by Stand and Shoot — no melee, no movement.
+			# Charger sits dead at its starting square; defender holds.
+			_advance_after_order(new_state)
+
+			var ss_panic_log = panic if not panic["auto_passed"] else {}
+			new_state.action_log.append({
+				"round": state.current_round,
+				"seat": state.active_seat,
+				"action": "charge",
+				"unit_id": unit.id,
+				"unit_type": unit.unit_type,
+				"target_id": target_id,
+				"target_type": target.unit_type,
+				"charge_range": charge_range,
+				"blundered": state.current_order_blundered,
+				"panic_test": ss_panic_log,
+				"target_fled": false,
+				"stand_and_shoot": stand_and_shoot,
+				"charger_destroyed_by_ss": true,
+				"unsaved_wounds": 0,
+				"counter_unsaved_wounds": 0,
+			})
+
+			result.new_state = new_state
+			result.dice_rolled = [panic_die, fearless_die] + dice_results.slice(0, ss_dice_used)
+			result.description = "Charge! %s → %s — Stand and Shoot wiped out the charger [CHARGER DESTROYED]" % [
+				unit.unit_type, target.unit_type
+			]
+			return result
+
 	# Move to adjacent cell
 	new_unit.x = charge_dest.x
 	new_unit.y = charge_dest.y
 
-	# Resolve melee as bouts (v17 core p.18)
-	var combat = Combat.resolve_melee(new_unit, new_target, dice_results)
+	# Resolve melee as bouts (v17 core p.18). Melee dice come AFTER any
+	# Stand and Shoot dice consumed above.
+	var combat = Combat.resolve_melee(new_unit, new_target, dice_results.slice(ss_dice_used))
 	if combat["error"] != "":
 		result.error = combat["error"]
 		return result
@@ -863,6 +908,8 @@ static func _execute_charge(state: Types.GameState, unit: Types.UnitState, param
 		"blundered": state.current_order_blundered,
 		"panic_test": panic_log,
 		"target_fled": false,
+		"stand_and_shoot": stand_and_shoot,
+		"charger_destroyed_by_ss": false,
 		"bouts": combat["bouts"],
 		"melee_draw": combat["draw"],
 		"melee_winner_id": combat["winner_id"],
@@ -880,6 +927,10 @@ static func _execute_charge(state: Types.GameState, unit: Types.UnitState, param
 		panic_text = " (target Fearless — held!)"
 	elif not panic["auto_passed"]:
 		panic_text = " (target passed panic test)"
+
+	var ss_text = ""
+	if not stand_and_shoot.is_empty() and stand_and_shoot.get("wounds", 0) > 0:
+		ss_text = " — S&S %d wounds" % stand_and_shoot["wounds"]
 
 	var outcome_text: String
 	if combat["draw"]:
@@ -899,8 +950,8 @@ static func _execute_charge(state: Types.GameState, unit: Types.UnitState, param
 		elif retreat.get("destroyed", false):
 			outcome_text += " — charger fled off board [DESTROYED]"
 
-	result.description = "Charge! %s → %s%s — %s (atk %d / def %d wounds)" % [
-		unit.unit_type, target.unit_type, panic_text, outcome_text,
+	result.description = "Charge! %s → %s%s%s — %s (atk %d / def %d wounds)" % [
+		unit.unit_type, target.unit_type, panic_text, ss_text, outcome_text,
 		atk_wounds_total, def_wounds_total,
 	]
 
