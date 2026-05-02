@@ -201,3 +201,80 @@ static func find_adjacent_cell(state: Types.GameState, charger: Types.UnitState,
 			best = Vector2i(cx, cy)
 
 	return best
+
+
+## Failed-charge destination (v17 p.17).
+##
+## When a charging unit cannot reach base contact with its target — either
+## because the target is outside M+2D6 range, or because every cell in the
+## target's 8-ring is blocked (occupied / on-objective / within 1" of a
+## non-target unit) — the unit must still move "their full charge distance
+## via the shortest route possible."
+##
+## Translated to the integer grid: pick the cell C inside the charger's
+## charge_range disc that minimizes distance(C, target). Tie-break by
+## maximizing distance(charger.start, C), so the unit moves as much of its
+## charge_range as it can ("full charge distance"). End position must be
+## legal under the same charge-strict rules find_adjacent_cell uses
+## (>1" from any non-target unit, no Snob exemption).
+##
+## Returns the charger's current cell if no legal destination exists
+## (e.g., the charger is pinned in by enemies on all sides).
+static func find_failed_charge_destination(
+	state: Types.GameState, charger: Types.UnitState, target: Types.UnitState, charge_range: int
+) -> Vector2i:
+	var best := Vector2i(charger.x, charger.y)
+	var best_to_target := Board.grid_distance(charger.x, charger.y, target.x, target.y)
+	var best_from_start := 0.0
+
+	# Bounding box: cells within charge_range Euclidean distance of charger.
+	var r: int = charge_range
+	for dx in range(-r, r + 1):
+		for dy in range(-r, r + 1):
+			var cx: int = charger.x + dx
+			var cy: int = charger.y + dy
+			if not Board.is_in_bounds(cx, cy):
+				continue
+			var d_from_start := Board.grid_distance(charger.x, charger.y, cx, cy)
+			if d_from_start > float(charge_range):
+				continue
+			# Charger may "stay" on its source cell; no other live unit may.
+			var occupied := false
+			for u in state.units:
+				if not u.is_dead and u.x == cx and u.y == cy and u.id != charger.id:
+					occupied = true
+					break
+			if occupied:
+				continue
+			var on_objective := false
+			for obj in state.objectives:
+				if obj.x == cx and obj.y == cy:
+					on_objective = true
+					break
+			if on_objective:
+				continue
+			# Charge-strict 1" rule: >1" from any non-target, non-charger unit.
+			var one_inch_blocked := false
+			for u in state.units:
+				if u.is_dead or u.id == charger.id or u.id == target.id:
+					continue
+				if u.x < 0 or u.y < 0:
+					continue
+				if Board.grid_distance(cx, cy, u.x, u.y) <= 1.0:
+					one_inch_blocked = true
+					break
+			if one_inch_blocked:
+				continue
+
+			var d_to_target := Board.grid_distance(cx, cy, target.x, target.y)
+			# Primary: minimize distance to target. Tie-break: maximize
+			# distance moved from start (the "full charge distance" clause).
+			if d_to_target < best_to_target - 0.001:
+				best_to_target = d_to_target
+				best_from_start = d_from_start
+				best = Vector2i(cx, cy)
+			elif abs(d_to_target - best_to_target) <= 0.001 and d_from_start > best_from_start:
+				best_from_start = d_from_start
+				best = Vector2i(cx, cy)
+
+	return best
