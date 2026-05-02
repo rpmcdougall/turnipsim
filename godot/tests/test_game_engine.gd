@@ -580,17 +580,109 @@ func _test_execute_charge() -> void:
 			and result.new_state.units[1].is_dead)
 	)
 
-	_test("charge: reject target out of charge range", func():
+	# v17 p.17 "Failed Charges": when no model can reach base contact, the
+	# unit must still move full charge distance toward target via shortest
+	# legal route. No panic test, no S&S, no melee.
+
+	_test("charge fail: target out of range — moves full charge distance toward target", func():
 		var state = _mock_orders_state()
 		state.units[0].x = 10; state.units[0].y = 10
 		state.units[1].x = 30; state.units[1].y = 10
+		# Park u2/u3 far away so they don't pollute the 1" check.
+		state.units[2].x = 0; state.units[2].y = 0
+		state.units[3].x = 47; state.units[3].y = 31
 		state = GameEngine.select_snob(state, state.units[0].id).new_state
-		# Bonus 2, total range 8. Distance 20 > 8.
+		# Toff M=6 + bonus 2 = range 8. Target at distance 20.
 		state = GameEngine.declare_order(state, state.units[0].id, "charge", 3, [1, 1]).new_state
 
-		var result = GameEngine.execute_order(state, {"target_id": state.units[1].id}, [5, 5, 1, 1])
+		var result = GameEngine.execute_order(state, {"target_id": state.units[1].id}, [])
+		if not result.is_success():
+			return false
+		var moved = result.new_state.units[0]
+		var target = result.new_state.units[1]
+		var log_entry = result.new_state.action_log.back()
+		# Closest legal cell to target (30, 10) within range 8 of (10, 10)
+		# is (18, 10) — straight line, exact rim, 12 from target.
+		return (moved.x == 18 and moved.y == 10
+			and not target.is_dead
+			and log_entry["action"] == "charge_failed"
+			and log_entry["failure_reason"] == "out_of_range"
+			and log_entry["from_x"] == 10 and log_entry["from_y"] == 10)
+	)
 
-		return not result.is_success() and "charge range" in result.error
+	_test("charge fail: target ring all 1\"-blocked — advances and stops short", func():
+		var state = _mock_orders_state()
+		state.units[0].x = 10; state.units[0].y = 15  # charger (seat 1 Snob)
+		state.units[1].x = 15; state.units[1].y = 15  # target (seat 2 Snob)
+		state.units[2].x = 0; state.units[2].y = 0
+		state.units[3].x = 47; state.units[3].y = 31
+		# Surround target with 8 friendly (seat 2) Snob blockers so every
+		# 8-ring cell of the target is occupied → find_adjacent_cell returns
+		# (-1,-1). Snobs don't block LoS (v17 p.5), so the charger can still
+		# see the target and declare the charge.
+		var ring = [
+			Vector2i(14, 14), Vector2i(14, 15), Vector2i(14, 16),
+			Vector2i(15, 14),                  Vector2i(15, 16),
+			Vector2i(16, 14), Vector2i(16, 15), Vector2i(16, 16),
+		]
+		for i in range(ring.size()):
+			var f = _mock_unit("blocker_%d" % i, 2, "Toady", "snob", 6, 2, 5, 2, 5, 0, 1)
+			f.x = ring[i].x; f.y = ring[i].y
+			state.units.append(f)
+		state = GameEngine.select_snob(state, state.units[0].id).new_state
+		# Toff M=6 + bonus 6 = range 12. Distance 5 ≤ 12.
+		state = GameEngine.declare_order(state, state.units[0].id, "charge", 3, [3, 3]).new_state
+
+		var result = GameEngine.execute_order(state, {"target_id": state.units[1].id}, [])
+		if not result.is_success():
+			return false
+		var moved = result.new_state.units[0]
+		var target = result.new_state.units[1]
+		var log_entry = result.new_state.action_log.back()
+		# Behavioural checks: charger moved, target alive, fail reason logged,
+		# and end position respects the charge-strict 1" rule for every
+		# non-target, non-charger unit.
+		if moved.x == 10 and moved.y == 15:
+			return false
+		if target.is_dead:
+			return false
+		if log_entry["action"] != "charge_failed":
+			return false
+		if log_entry["failure_reason"] != "no_legal_adjacent_cell":
+			return false
+		for u in result.new_state.units:
+			if u.id == moved.id or u.id == target.id:
+				continue
+			if u.is_dead:
+				continue
+			if Board.grid_distance(moved.x, moved.y, u.x, u.y) <= 1.0:
+				return false
+		return true
+	)
+
+	_test("charge fail: pinned charger with no legal cell stays put", func():
+		# Direct unit test of Targeting.find_failed_charge_destination: when
+		# every reachable cell is illegal, the helper falls back to the
+		# charger's own (cx, cy).
+		var state = _mock_orders_state()
+		state.units[0].x = 5; state.units[0].y = 5
+		state.units[1].x = 25; state.units[1].y = 5
+		state.units[2].x = 0; state.units[2].y = 0
+		state.units[3].x = 47; state.units[3].y = 31
+		# Wrap the charger in a 5x5 block of seat-2 Followers (every cell
+		# within 2 of the charger except its own). With a small charge_range
+		# (2) every reachable cell is either occupied or within 1" of a
+		# blocker, so the helper has nowhere legal to send the charger.
+		for dx in range(-2, 3):
+			for dy in range(-2, 3):
+				if dx == 0 and dy == 0:
+					continue
+				var f = _mock_unit("pin_%d_%d" % [dx, dy], 2, "Fodder", "infantry", 6, 1, 6, 1, 6, 0, 1)
+				f.x = 5 + dx; f.y = 5 + dy
+				state.units.append(f)
+		var dest = Targeting.find_failed_charge_destination(state, state.units[0], state.units[1], 2)
+		# Helper falls back to charger's start cell when nothing legal exists.
+		return dest.x == 5 and dest.y == 5
 	)
 
 	_test("charge: close_combat equipment reduces inaccuracy by 1", func():

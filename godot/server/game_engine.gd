@@ -741,20 +741,57 @@ static func _execute_charge(state: Types.GameState, unit: Types.UnitState, param
 	# Charge range: M + move_bonus. Must end adjacent (distance = 1) to target.
 	var charge_range = unit.base_stats.movement + state.current_order_move_bonus
 	var target_distance = Board.grid_distance(unit.x, unit.y, target.x, target.y)
+
+	# v17 p.17 "Failed Charges": if no model can make base contact, the unit
+	# must still move its full charge distance toward target via the shortest
+	# legal route. Three ways a charge can fail:
+	#   1. target_distance > charge_range — target sits outside M+2D6 reach
+	#   2. find_adjacent_cell returns (-1,-1) — every 8-ring cell illegal
+	#      (occupied, on objective, or within 1" of a non-target unit)
+	#   3. closest legal 8-ring cell exists but is itself out of charge_range
+	# All three resolve the same way: move to find_failed_charge_destination,
+	# skip panic test / S&S / melee, log charge_failed.
+	var failure_reason: String = ""
 	if target_distance > charge_range:
-		result.error = "Target out of charge range (distance %.1f, max %d)" % [target_distance, charge_range]
-		return result
+		failure_reason = "out_of_range"
 
-	# Find an adjacent cell to the target to move to
 	var charge_dest = Targeting.find_adjacent_cell(state, unit, target)
-	if charge_dest.x == -1:
-		result.error = "No open cell adjacent to target"
-		return result
+	if failure_reason == "" and charge_dest.x == -1:
+		failure_reason = "no_legal_adjacent_cell"
 
-	# Verify the adjacent cell is within charge range
-	var move_distance = Board.grid_distance(unit.x, unit.y, charge_dest.x, charge_dest.y)
-	if move_distance > charge_range:
-		result.error = "Cannot reach target (need %.1f, have %d)" % [move_distance, charge_range]
+	var move_distance: float = 0.0
+	if failure_reason == "":
+		move_distance = Board.grid_distance(unit.x, unit.y, charge_dest.x, charge_dest.y)
+		if move_distance > charge_range:
+			failure_reason = "adjacent_cell_unreachable"
+
+	if failure_reason != "":
+		var failed_dest = Targeting.find_failed_charge_destination(state, unit, target, charge_range)
+		var failed_state = _clone_state(state)
+		var failed_unit = _find_unit(failed_state, unit.id)
+		var from_x: int = unit.x
+		var from_y: int = unit.y
+		failed_unit.x = failed_dest.x
+		failed_unit.y = failed_dest.y
+		_advance_after_order(failed_state)
+		failed_state.action_log.append({
+			"round": state.current_round,
+			"seat": state.active_seat,
+			"action": "charge_failed",
+			"unit_id": unit.id,
+			"unit_type": unit.unit_type,
+			"target_id": target_id,
+			"target_type": target.unit_type,
+			"charge_range": charge_range,
+			"failure_reason": failure_reason,
+			"from_x": from_x, "from_y": from_y,
+			"to_x": failed_dest.x, "to_y": failed_dest.y,
+			"blundered": state.current_order_blundered,
+		})
+		result.new_state = failed_state
+		result.description = "Charge! %s → %s — failed (%s), advanced to (%d,%d)" % [
+			unit.unit_type, target.unit_type, failure_reason, failed_dest.x, failed_dest.y
+		]
 		return result
 
 	var new_state = _clone_state(state)
